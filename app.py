@@ -95,9 +95,33 @@ def mark_applied(job_id):
     print("Applied clicked!")
     conn = sqlite3.connect(config["db_path"])
     cursor = conn.cursor()
+    
+    # Update jobs table
     query = "UPDATE jobs SET applied = 1 WHERE id = ?"
-    print(f'Executing query: {query} with job_id: {job_id}')  # Log the query
+    print(f'Executing query: {query} with job_id: {job_id}')
     cursor.execute(query, (job_id,))
+    
+    # Get job details to auto-populate application
+    cursor.execute("SELECT title, company, job_url, date FROM jobs WHERE id = ?", (job_id,))
+    job = cursor.fetchone()
+    
+    if job:
+        title, company, job_url, job_date = job
+        from datetime import datetime
+        
+        # Check if application already exists for this job
+        cursor.execute("SELECT id FROM applications WHERE job_id = ?", (job_id,))
+        existing = cursor.fetchone()
+        
+        if not existing:
+            # Create new application entry
+            date_submitted = datetime.now().strftime("%Y-%m-%d")
+            cursor.execute("""
+                INSERT INTO applications (job_id, company_name, application_status, role, date_submitted, link_to_job_req)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (job_id, company, 'Applied', title, date_submitted, job_url))
+            print(f"Created application entry for job_id: {job_id}")
+    
     conn.commit()
     conn.close()
     return jsonify({"success": "Job marked as applied"}), 200
@@ -275,6 +299,26 @@ def verify_db_schema():
         cursor.execute("ALTER TABLE jobs ADD COLUMN resume TEXT")
         print("Added resume column to jobs table")
 
+    # Create applications table if it doesn't exist
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS applications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id INTEGER,
+            company_name TEXT NOT NULL,
+            application_status TEXT DEFAULT 'Applied',
+            role TEXT NOT NULL,
+            salary TEXT,
+            date_submitted TEXT,
+            link_to_job_req TEXT,
+            rejection_reason TEXT,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (job_id) REFERENCES jobs(id)
+        )
+    """)
+    conn.commit()
+    print("Verified applications table exists")
     conn.close()
 
 # Global variable to track search status
@@ -312,6 +356,106 @@ def update_config():
 def get_search_status():
     """Get current search execution status"""
     return jsonify(search_status)
+
+@app.route('/application_tracker')
+def application_tracker():
+    return render_template('application_tracker.html')
+
+@app.route('/api/applications', methods=['GET'])
+def get_applications():
+    """Get all applications"""
+    try:
+        conn = sqlite3.connect(config["db_path"])
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, job_id, company_name, application_status, role, salary, 
+                   date_submitted, link_to_job_req, rejection_reason, notes
+            FROM applications
+            ORDER BY date_submitted DESC, id DESC
+        """)
+        
+        columns = [description[0] for description in cursor.description]
+        applications = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify(applications)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/applications', methods=['POST'])
+def create_application():
+    """Create a new application"""
+    try:
+        data = request.json
+        conn = sqlite3.connect(config["db_path"])
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT INTO applications (job_id, company_name, application_status, role, salary, 
+                                     date_submitted, link_to_job_req, rejection_reason, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            data.get('job_id'),
+            data.get('company_name', ''),
+            data.get('application_status', 'Applied'),
+            data.get('role', ''),
+            data.get('salary', ''),
+            data.get('date_submitted', ''),
+            data.get('link_to_job_req', ''),
+            data.get('rejection_reason', ''),
+            data.get('notes', '')
+        ))
+        conn.commit()
+        app_id = cursor.lastrowid
+        conn.close()
+        return jsonify({"success": True, "id": app_id}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/applications/<int:app_id>', methods=['PUT'])
+def update_application(app_id):
+    """Update an application"""
+    try:
+        data = request.json
+        conn = sqlite3.connect(config["db_path"])
+        cursor = conn.cursor()
+        
+        from datetime import datetime
+        cursor.execute("""
+            UPDATE applications 
+            SET company_name = ?, application_status = ?, role = ?, salary = ?,
+                date_submitted = ?, link_to_job_req = ?, rejection_reason = ?, 
+                notes = ?, updated_at = ?
+            WHERE id = ?
+        """, (
+            data.get('company_name', ''),
+            data.get('application_status', 'Applied'),
+            data.get('role', ''),
+            data.get('salary', ''),
+            data.get('date_submitted', ''),
+            data.get('link_to_job_req', ''),
+            data.get('rejection_reason', ''),
+            data.get('notes', ''),
+            datetime.now().isoformat(),
+            app_id
+        ))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/applications/<int:app_id>', methods=['DELETE'])
+def delete_application(app_id):
+    """Delete an application"""
+    try:
+        conn = sqlite3.connect(config["db_path"])
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM applications WHERE id = ?", (app_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/search/execute', methods=['POST'])
 def execute_search():
