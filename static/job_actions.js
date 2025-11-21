@@ -1,5 +1,27 @@
 var selectedJob = null;
 
+// Search functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const searchBar = document.getElementById('search-bar');
+    if (searchBar) {
+        searchBar.addEventListener('input', function(e) {
+            filterJobs(e.target.value.toLowerCase());
+        });
+    }
+});
+
+function filterJobs(searchTerm) {
+    const jobItems = document.querySelectorAll('.job-item');
+    jobItems.forEach(function(jobItem) {
+        const jobContent = jobItem.textContent.toLowerCase();
+        if (jobContent.includes(searchTerm)) {
+            jobItem.classList.remove('hidden');
+        } else {
+            jobItem.classList.add('hidden');
+        }
+    });
+}
+
 async function showJobDetails(jobId) {
     if (selectedJob !== null) {
         selectedJob.classList.remove('job-item-selected');

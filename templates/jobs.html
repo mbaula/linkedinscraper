@@ -85,6 +85,13 @@
             .job-item-rejected {
                 background-color: #ffc7c7;
             }
+            #search-bar:focus {
+                outline: none;
+                border-color: #45a049;
+            }
+            .job-item.hidden {
+                display: none;
+            }
             .job-button {
                 background-color: #4CAF50; /* Green */
                 color: white;
@@ -129,7 +136,9 @@
             <div class="column">
                 <!-- Display the list of jobs -->
                 <h2>Jobs List</h2>
+                <input type="text" id="search-bar" placeholder="Search jobs by title, company, or location..." style="width: 100%; padding: 10px; margin-bottom: 15px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; box-sizing: border-box;">
                 
+                <div id="jobs-container">
                 {% for job in jobs %}
                 <a class="{% if job.rejected == 1 %}job-item job-item-rejected{% elif job.interview == 1 %}job-item job-item-interview{% elif job.applied == 1 %}job-item job-item-applied{% else %}job-item{% endif %}"  href="#" onclick="event.preventDefault(); showJobDetails('{{ job.id }}')" data-job-id="{{ job.id }}">
                     <div class="job-content">
@@ -139,6 +148,7 @@
                     </div>
                 </a>
                 {% endfor %}
+                </div>
             </div>
             <div class="column">
                 <!-- Placeholder for job details -->
