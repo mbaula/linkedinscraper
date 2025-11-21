@@ -135,6 +135,26 @@
         .delete-btn:hover {
             background-color: #da190b;
         }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+        .btn-primary {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #45a049;
+        }
+        .btn-primary:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
         .link-cell a {
             color: #4CAF50;
             text-decoration: none;
@@ -160,8 +180,15 @@
 </head>
 <body>
     <div class="container">
-        <a href="/" class="nav-link">← Back to Jobs List</a>
-        <h1>Job Application Tracker</h1>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <div>
+                <a href="/" class="nav-link">← Back to Jobs List</a>
+                <h1 style="margin: 10px 0 0 0;">Job Application Tracker</h1>
+            </div>
+            <button id="export-btn" class="btn btn-primary" onclick="exportToCSV()" style="padding: 10px 20px; font-size: 14px;">
+                Export to CSV
+            </button>
+        </div>
         
         <div id="status-message" class="status-message"></div>
         
@@ -441,6 +468,41 @@
             setTimeout(() => {
                 statusDiv.style.display = 'none';
             }, 5000);
+        }
+
+        function exportToCSV() {
+            const btn = document.getElementById('export-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Exporting...';
+            
+            fetch('/api/applications/export')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Export failed');
+                    }
+                    return response.blob();
+                })
+                .then(blob => {
+                    // Create download link
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'applications_export_' + new Date().toISOString().split('T')[0] + '.csv';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showMessage('Applications exported successfully!', 'success');
+                })
+                .catch(error => {
+                    showMessage('Error exporting: ' + error.message, 'error');
+                })
+                .finally(() => {
+                    btn.disabled = false;
+                    btn.textContent = originalText;
+                });
         }
     </script>
 </body>

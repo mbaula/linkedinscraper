@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, Response
 import pandas as pd
 import sqlite3
 import json
@@ -9,6 +9,8 @@ import threading
 import subprocess
 import os
 import sys
+import csv
+import io
 
 def load_config(file_name):
     # Load the config file
@@ -477,6 +479,48 @@ def delete_application(app_id):
         conn.commit()
         conn.close()
         return jsonify({"success": True, "job_id": job_id}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/applications/export', methods=['GET'])
+def export_applications_csv():
+    """Export all applications to CSV"""
+    try:
+        conn = sqlite3.connect(config["db_path"])
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT company_name, application_status, role, salary, 
+                   date_submitted, link_to_job_req, rejection_reason, notes
+            FROM applications
+            ORDER BY date_submitted DESC, id DESC
+        """)
+        
+        # Create CSV in memory
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        writer.writerow([
+            'Company Name', 'Application Status', 'Role', 'Salary',
+            'Date Submitted', 'Link to Job Req', 'Rejection Reason', 'Notes'
+        ])
+        
+        # Write data
+        for row in cursor.fetchall():
+            writer.writerow(row)
+        
+        conn.close()
+        
+        # Create response with CSV data
+        output.seek(0)
+        response = Response(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={
+                'Content-Disposition': 'attachment; filename=applications_export.csv'
+            }
+        )
+        return response
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

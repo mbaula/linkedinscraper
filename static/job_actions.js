@@ -153,26 +153,29 @@ function applyAllFilters() {
             }
         }
         
-        // Apply city filter (multiple selection)
+        // Apply city filter (multiple selection) - case insensitive
         if (shouldShow && selectedFilters.city.length > 0) {
-            const jobCity = jobItem.getAttribute('data-city');
-            if (!selectedFilters.city.includes(jobCity)) {
+            const jobCity = (jobItem.getAttribute('data-city') || '').toLowerCase();
+            const selectedCitiesLower = selectedFilters.city.map(c => c.toLowerCase());
+            if (!selectedCitiesLower.includes(jobCity)) {
                 shouldShow = false;
             }
         }
         
-        // Apply title filter (multiple selection)
+        // Apply title filter (multiple selection) - case insensitive
         if (shouldShow && selectedFilters.title.length > 0) {
-            const jobTitle = jobItem.getAttribute('data-title');
-            if (!selectedFilters.title.includes(jobTitle)) {
+            const jobTitle = (jobItem.getAttribute('data-title') || '').toLowerCase();
+            const selectedTitlesLower = selectedFilters.title.map(t => t.toLowerCase());
+            if (!selectedTitlesLower.includes(jobTitle)) {
                 shouldShow = false;
             }
         }
         
-        // Apply company filter (multiple selection)
+        // Apply company filter (multiple selection) - case insensitive
         if (shouldShow && selectedFilters.company.length > 0) {
-            const jobCompany = jobItem.getAttribute('data-company');
-            if (!selectedFilters.company.includes(jobCompany)) {
+            const jobCompany = (jobItem.getAttribute('data-company') || '').toLowerCase();
+            const selectedCompaniesLower = selectedFilters.company.map(c => c.toLowerCase());
+            if (!selectedCompaniesLower.includes(jobCompany)) {
                 shouldShow = false;
             }
         }
@@ -307,7 +310,7 @@ function updateJobDetails(job) {
     console.log('Updating job details: ' + job.id); // Log the jobId here
     var html = '<h2 class="job-title">' + job.title + '</h2>';
     html += '<div class="button-container" style="text-align:center">';
-    html += '<a href="' + job.job_url + '" class="job-button">Go to job</a>';
+    html += '<a href="' + job.job_url + '" class="job-button" target="_blank" rel="noopener noreferrer">Go to job</a>';
     html += '<button class="job-button" onclick="markAsCoverLetter(' + job.id + ')">Cover Letter</button>';
     html += '<button class="job-button" onclick="markAsApplied(' + job.id + ')">Applied</button>';
     html += '<button class="job-button" onclick="markAsRejected(' + job.id + ')">Rejected</button>';
