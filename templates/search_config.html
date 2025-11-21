@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Search Configuration</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #4CAF50;
+            margin-bottom: 10px;
+        }
+        .nav-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #4CAF50;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .nav-link:hover {
+            text-decoration: underline;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            border-left: 4px solid #4CAF50;
+        }
+        .section h2 {
+            color: #4CAF50;
+            margin-top: 0;
+            font-size: 1.3em;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        input[type="text"], input[type="number"], select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+        textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+        .array-item {
+            background-color: white;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            position: relative;
+        }
+        .array-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .array-item-title {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+        .btn-primary {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #45a049;
+        }
+        .btn-danger {
+            background-color: #f44336;
+            color: white;
+        }
+        .btn-danger:hover {
+            background-color: #da190b;
+        }
+        .btn-secondary {
+            background-color: #2196F3;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #0b7dda;
+        }
+        .btn-success {
+            background-color: #4CAF50;
+            color: white;
+            padding: 15px 30px;
+            font-size: 16px;
+        }
+        .btn-success:hover {
+            background-color: #45a049;
+        }
+        .btn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .status-message {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+            display: none;
+        }
+        .status-message.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status-message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status-message.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .tag-input {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 5px;
+        }
+        .tag {
+            background-color: #4CAF50;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 15px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .tag-remove {
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .search-query-item {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr auto;
+            gap: 10px;
+            align-items: end;
+        }
+        .inline-form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #4CAF50;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="nav-link">← Back to Jobs List</a>
+        <h1>Search Configuration</h1>
+        
+        <div id="status-message" class="status-message"></div>
+        
+        <form id="config-form">
+            <!-- Search Queries Section -->
+            <div class="section">
+                <div class="section-header">
+                    <h2>Search Queries</h2>
+                    <button type="button" class="btn btn-secondary" onclick="addSearchQuery()">Add Query</button>
+                </div>
+                <div id="search-queries-container"></div>
+            </div>
+
+            <!-- Filtering Options -->
+            <div class="section">
+                <h2>Filtering Options</h2>
+                
+                <div class="form-group">
+                    <label>Description Words to Exclude (one per line)</label>
+                    <textarea id="desc_words" placeholder="Enter words to exclude from job descriptions, one per line"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Title Words to Exclude</label>
+                    <div class="tag-input">
+                        <input type="text" id="title-exclude-input" placeholder="Type and press Enter to add">
+                    </div>
+                    <div id="title-exclude-tags" class="tag-input"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>Title Words to Include</label>
+                    <div class="tag-input">
+                        <input type="text" id="title-include-input" placeholder="Type and press Enter to add">
+                    </div>
+                    <div id="title-include-tags" class="tag-input"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>Company Names to Exclude</label>
+                    <div class="tag-input">
+                        <input type="text" id="company-exclude-input" placeholder="Type and press Enter to add">
+                    </div>
+                    <div id="company-exclude-tags" class="tag-input"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>Languages (comma-separated)</label>
+                    <input type="text" id="languages" placeholder="e.g., en, es, fr">
+                </div>
+            </div>
+
+            <!-- Scraping Settings -->
+            <div class="section">
+                <h2>Scraping Settings</h2>
+                
+                <div class="form-group">
+                    <label>Pages to Scrape per Query</label>
+                    <input type="number" id="pages_to_scrape" min="1" value="10">
+                </div>
+
+                <div class="form-group">
+                    <label>Rounds</label>
+                    <input type="number" id="rounds" min="1" value="1">
+                </div>
+
+                <div class="form-group">
+                    <label>Days to Scrape (how many days back)</label>
+                    <input type="number" id="days_to_scrape" min="1" value="10">
+                </div>
+
+                <div class="form-group">
+                    <label>Timespan</label>
+                    <input type="text" id="timespan" placeholder="e.g., r84600">
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="button-group">
+                <button type="button" class="btn btn-primary" onclick="saveConfig()">Save Configuration</button>
+                <button type="button" class="btn btn-success" onclick="executeSearch()" id="execute-btn">Execute Search</button>
+            </div>
+        </form>
+
+        <div id="search-status" style="margin-top: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 5px; display: none;">
+            <h3>Search Status</h3>
+            <p id="status-text"></p>
+        </div>
+    </div>
+
+    <script>
+        let configData = {};
+
+        // Load configuration on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadConfig();
+            setupTagInputs();
+            checkSearchStatus();
+            // Poll search status every 2 seconds if search is running
+            setInterval(checkSearchStatus, 2000);
+        });
+
+        function loadConfig() {
+            fetch('/api/config')
+                .then(response => response.json())
+                .then(data => {
+                    configData = data;
+                    populateForm(data);
+                })
+                .catch(error => {
+                    showMessage('Error loading configuration: ' + error, 'error');
+                });
+        }
+
+        function populateForm(config) {
+            // Populate search queries
+            const container = document.getElementById('search-queries-container');
+            container.innerHTML = '';
+            if (config.search_queries && config.search_queries.length > 0) {
+                config.search_queries.forEach((query, index) => {
+                    addSearchQuery(query, index);
+                });
+            } else {
+                addSearchQuery();
+            }
+
+            // Populate arrays
+            populateTagArray('title-exclude-tags', config.title_exclude || []);
+            populateTagArray('title-include-tags', config.title_include || []);
+            populateTagArray('company-exclude-tags', config.company_exclude || []);
+
+            // Populate text areas
+            document.getElementById('desc_words').value = (config.desc_words || []).join('\n');
+            document.getElementById('languages').value = (config.languages || []).join(', ');
+
+            // Populate scraping settings
+            document.getElementById('pages_to_scrape').value = config.pages_to_scrape || 10;
+            document.getElementById('rounds').value = config.rounds || 1;
+            document.getElementById('days_to_scrape').value = config.days_to_scrape || 10;
+            document.getElementById('timespan').value = config.timespan || '';
+        }
+
+        function addSearchQuery(query = null, index = null) {
+            const container = document.getElementById('search-queries-container');
+            const div = document.createElement('div');
+            div.className = 'array-item';
+            const queryIndex = index !== null ? index : container.children.length;
+            
+            div.innerHTML = `
+                <div class="search-query-item">
+                    <div class="inline-form-group">
+                        <label>Keywords</label>
+                        <input type="text" class="query-keywords" value="${query ? query.keywords || '' : ''}" placeholder="e.g., Software Engineer">
+                    </div>
+                    <div class="inline-form-group">
+                        <label>Location</label>
+                        <input type="text" class="query-location" value="${query ? query.location || '' : ''}" placeholder="e.g., Toronto, ON">
+                    </div>
+                    <div class="inline-form-group">
+                        <label>Work Type (f_WT)</label>
+                        <input type="text" class="query-f_wt" value="${query ? query.f_WT || '' : ''}" placeholder="e.g., 2 for remote">
+                    </div>
+                    <button type="button" class="btn btn-danger" onclick="removeSearchQuery(this)">Remove</button>
+                </div>
+            `;
+            container.appendChild(div);
+        }
+
+        function removeSearchQuery(btn) {
+            btn.closest('.array-item').remove();
+        }
+
+        function setupTagInputs() {
+            setupTagInput('title-exclude-input', 'title-exclude-tags');
+            setupTagInput('title-include-input', 'title-include-tags');
+            setupTagInput('company-exclude-input', 'company-exclude-tags');
+        }
+
+        function setupTagInput(inputId, containerId) {
+            const input = document.getElementById(inputId);
+            input.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const value = this.value.trim();
+                    if (value) {
+                        addTag(containerId, value);
+                        this.value = '';
+                    }
+                }
+            });
+        }
+
+        function addTag(containerId, value) {
+            const container = document.getElementById(containerId);
+            const tag = document.createElement('span');
+            tag.className = 'tag';
+            tag.innerHTML = `${value} <span class="tag-remove" onclick="removeTag(this)">×</span>`;
+            container.appendChild(tag);
+        }
+
+        function removeTag(element) {
+            element.closest('.tag').remove();
+        }
+
+        function populateTagArray(containerId, array) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            array.forEach(item => addTag(containerId, item));
+        }
+
+        function getTagsFromContainer(containerId) {
+            const container = document.getElementById(containerId);
+            const tags = Array.from(container.querySelectorAll('.tag'));
+            return tags.map(tag => tag.textContent.trim().replace('×', '').trim());
+        }
+
+        function saveConfig() {
+            // Collect search queries
+            const queryItems = document.querySelectorAll('.array-item');
+            const searchQueries = Array.from(queryItems).map(item => ({
+                keywords: item.querySelector('.query-keywords').value,
+                location: item.querySelector('.query-location').value,
+                f_WT: item.querySelector('.query-f_wt').value
+            }));
+
+            // Collect other config values
+            const descWords = document.getElementById('desc_words').value
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0);
+
+            const config = {
+                ...configData, // Preserve existing config like proxies, headers, etc.
+                search_queries: searchQueries,
+                desc_words: descWords,
+                title_exclude: getTagsFromContainer('title-exclude-tags'),
+                title_include: getTagsFromContainer('title-include-tags'),
+                company_exclude: getTagsFromContainer('company-exclude-tags'),
+                languages: document.getElementById('languages').value.split(',').map(l => l.trim()).filter(l => l),
+                pages_to_scrape: parseInt(document.getElementById('pages_to_scrape').value),
+                rounds: parseInt(document.getElementById('rounds').value),
+                days_to_scrape: parseInt(document.getElementById('days_to_scrape').value),
+                timespan: document.getElementById('timespan').value
+            };
+
+            fetch('/api/config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(config)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showMessage('Error saving configuration: ' + data.error, 'error');
+                } else {
+                    showMessage('Configuration saved successfully!', 'success');
+                    configData = config;
+                }
+            })
+            .catch(error => {
+                showMessage('Error saving configuration: ' + error, 'error');
+            });
+        }
+
+        function executeSearch() {
+            // First save the config
+            saveConfig();
+            
+            // Wait a moment for save to complete, then execute
+            setTimeout(() => {
+                const btn = document.getElementById('execute-btn');
+                btn.disabled = true;
+                btn.innerHTML = 'Executing... <span class="loading"></span>';
+                
+                fetch('/api/search/execute', {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showMessage('Error starting search: ' + data.error, 'error');
+                        btn.disabled = false;
+                        btn.innerHTML = 'Execute Search';
+                    } else {
+                        showMessage('Search started! Check status below.', 'info');
+                        document.getElementById('search-status').style.display = 'block';
+                        checkSearchStatus();
+                    }
+                })
+                .catch(error => {
+                    showMessage('Error executing search: ' + error, 'error');
+                    btn.disabled = false;
+                    btn.innerHTML = 'Execute Search';
+                });
+            }, 500);
+        }
+
+        function checkSearchStatus() {
+            fetch('/api/search/status')
+                .then(response => response.json())
+                .then(data => {
+                    const statusDiv = document.getElementById('search-status');
+                    const statusText = document.getElementById('status-text');
+                    const btn = document.getElementById('execute-btn');
+                    
+                    if (data.running) {
+                        statusDiv.style.display = 'block';
+                        statusText.textContent = data.message || 'Search in progress...';
+                        btn.disabled = true;
+                        btn.innerHTML = 'Search Running... <span class="loading"></span>';
+                    } else {
+                        if (data.message) {
+                            statusDiv.style.display = 'block';
+                            statusText.textContent = data.message;
+                        }
+                        btn.disabled = false;
+                        btn.innerHTML = 'Execute Search';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking search status:', error);
+                });
+        }
+
+        function showMessage(message, type) {
+            const statusDiv = document.getElementById('status-message');
+            statusDiv.textContent = message;
+            statusDiv.className = 'status-message ' + type;
+            statusDiv.style.display = 'block';
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
+

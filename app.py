@@ -1,10 +1,14 @@
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 import pandas as pd
 import sqlite3
 import json
 import openai
 from pdfminer.high_level import extract_text
 from flask_cors import CORS
+import threading
+import subprocess
+import os
+import sys
 
 def load_config(file_name):
     # Load the config file
@@ -273,6 +277,79 @@ def verify_db_schema():
 
     conn.close()
 
+# Global variable to track search status
+search_status = {"running": False, "message": ""}
+
+@app.route('/search_config')
+def search_config():
+    return render_template('search_config.html')
+
+@app.route('/api/config', methods=['GET'])
+def get_config():
+    """Get current configuration"""
+    try:
+        with open('config.json', 'r') as f:
+            config = json.load(f)
+        return jsonify(config)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/config', methods=['POST'])
+def update_config():
+    """Update configuration"""
+    try:
+        new_config = request.json
+        with open('config.json', 'w') as f:
+            json.dump(new_config, f, indent=4)
+        # Reload config
+        global config
+        config = load_config('config.json')
+        return jsonify({"success": True, "message": "Configuration updated successfully"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/search/status', methods=['GET'])
+def get_search_status():
+    """Get current search execution status"""
+    return jsonify(search_status)
+
+@app.route('/api/search/execute', methods=['POST'])
+def execute_search():
+    """Execute the search/scraping process"""
+    global search_status
+    
+    if search_status["running"]:
+        return jsonify({"error": "Search is already running"}), 400
+    
+    def run_search():
+        global search_status
+        search_status["running"] = True
+        search_status["message"] = "Search started..."
+        try:
+            # Run the main.py script
+            result = subprocess.run(
+                [sys.executable, 'main.py', 'config.json'],
+                capture_output=True,
+                text=True,
+                cwd=os.getcwd()
+            )
+            if result.returncode == 0:
+                search_status["message"] = "Search completed successfully"
+            else:
+                search_status["message"] = f"Search completed with errors: {result.stderr}"
+        except Exception as e:
+            search_status["message"] = f"Error executing search: {str(e)}"
+        finally:
+            search_status["running"] = False
+    
+    # Run search in a separate thread
+    thread = threading.Thread(target=run_search)
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({"success": True, "message": "Search started"})
+
 if __name__ == "__main__":
+    import sys
     verify_db_schema()  # Verify the DB schema before running the app
     app.run(debug=True, port=5001)

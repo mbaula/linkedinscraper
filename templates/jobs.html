@@ -138,7 +138,10 @@
         <div class="row">
             <div class="column">
                 <!-- Display the list of jobs -->
-                <h2>Jobs List</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h2 style="margin: 0;">Jobs List</h2>
+                    <a href="/search_config" style="color: #4CAF50; text-decoration: none; font-weight: bold; padding: 8px 15px; border: 2px solid #4CAF50; border-radius: 5px; transition: all 0.3s;">⚙️ Configure Search</a>
+                </div>
                 <input type="text" id="search-bar" placeholder="Search jobs by title, company, or location..." style="width: 100%; padding: 10px; margin-bottom: 15px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; box-sizing: border-box;">
                 
                 <div id="filter-container" style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
