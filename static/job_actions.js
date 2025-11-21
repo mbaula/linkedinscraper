@@ -12,6 +12,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const searchBar = document.getElementById('search-bar');
     const sortBy = document.getElementById('sort-by');
     
+    // Check if search was completed and refresh if needed
+    checkForSearchCompletion();
+    
     // Populate filter dropdowns with unique values
     populateFilters();
     
@@ -29,7 +32,37 @@ document.addEventListener('DOMContentLoaded', function() {
             closeAllDropdowns();
         }
     });
+    
+    // Check for search completion periodically and on visibility change
+    setInterval(checkForSearchCompletion, 3000);
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) {
+            checkForSearchCompletion();
+        }
+    });
 });
+
+function checkForSearchCompletion() {
+    const refreshFlag = localStorage.getItem('refreshJobsList');
+    if (refreshFlag === 'true') {
+        // Clear the flag
+        localStorage.removeItem('refreshJobsList');
+        const completedAt = localStorage.getItem('searchCompleted');
+        localStorage.removeItem('searchCompleted');
+        
+        // Auto-refresh to show new jobs
+        // Show a brief message if possible, then refresh
+        const notification = document.createElement('div');
+        notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #4CAF50; color: white; padding: 15px 20px; border-radius: 5px; z-index: 10000; box-shadow: 0 4px 8px rgba(0,0,0,0.2);';
+        notification.textContent = 'Search completed! Refreshing jobs list...';
+        document.body.appendChild(notification);
+        
+        // Refresh after a brief delay to show the message
+        setTimeout(function() {
+            window.location.reload();
+        }, 1500);
+    }
+}
 
 function populateFilters() {
     const jobItems = document.querySelectorAll('.job-item');

@@ -119,8 +119,6 @@
         .btn-success {
             background-color: #4CAF50;
             color: white;
-            padding: 15px 30px;
-            font-size: 16px;
         }
         .btn-success:hover {
             background-color: #45a049;
@@ -523,6 +521,12 @@
                         }
                         btn.disabled = false;
                         btn.innerHTML = 'Execute Search';
+                        
+                        // If search just completed, signal jobs page to refresh
+                        if (data.completed && data.completed_at) {
+                            localStorage.setItem('searchCompleted', data.completed_at);
+                            localStorage.setItem('refreshJobsList', 'true');
+                        }
                     }
                 })
                 .catch(error => {

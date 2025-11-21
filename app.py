@@ -285,13 +285,79 @@ def get_CoverLetter(job_id):
     conn.close()
     return jsonify({"cover_letter": response}), 200
 
+def filter_jobs_by_config(jobs_list, config):
+    """Apply config filters to jobs list (for existing jobs in database)"""
+    filtered_jobs = jobs_list.copy()
+    
+    # Filter by title_exclude (case insensitive)
+    title_exclude = config.get('title_exclude', [])
+    if title_exclude and len(title_exclude) > 0:
+        title_exclude = [word.strip().lower() for word in title_exclude if word and word.strip()]
+        if title_exclude:
+            filtered_jobs = [
+                job for job in filtered_jobs 
+                if job.get('title') and not any(
+                    exclude_word in (job.get('title', '') or '').lower() 
+                    for exclude_word in title_exclude
+                )
+            ]
+    
+    # Filter by title_include (case insensitive)
+    title_include = config.get('title_include', [])
+    if title_include and len(title_include) > 0:
+        title_include = [word.strip().lower() for word in title_include if word and word.strip()]
+        if title_include:
+            filtered_jobs = [
+                job for job in filtered_jobs 
+                if job.get('title') and any(
+                    include_word in (job.get('title', '') or '').lower() 
+                    for include_word in title_include
+                )
+            ]
+    
+    # Filter by desc_words (case insensitive)
+    desc_words = config.get('desc_words', [])
+    if desc_words and len(desc_words) > 0:
+        desc_words = [word.strip().lower() for word in desc_words if word and word.strip()]
+        if desc_words:
+            filtered_jobs = [
+                job for job in filtered_jobs 
+                if job.get('job_description') and not any(
+                    desc_word in (job.get('job_description', '') or '').lower() 
+                    for desc_word in desc_words
+                )
+            ]
+    
+    # Filter by company_exclude (case insensitive)
+    company_exclude = config.get('company_exclude', [])
+    if company_exclude and len(company_exclude) > 0:
+        company_exclude = [word.strip().lower() for word in company_exclude if word and word.strip()]
+        if company_exclude:
+            filtered_jobs = [
+                job for job in filtered_jobs 
+                if job.get('company') and not any(
+                    company_word in (job.get('company', '') or '').lower() 
+                    for company_word in company_exclude
+                )
+            ]
+    
+    return filtered_jobs
+
 def read_jobs_from_db():
-    conn = sqlite3.connect(config["db_path"])
+    # Reload config to get latest filter settings
+    current_config = load_config('config.json')
+    
+    conn = sqlite3.connect(current_config["db_path"])
     query = "SELECT * FROM jobs WHERE hidden = 0"
     df = pd.read_sql_query(query, conn)
     df = df.sort_values(by='id', ascending=False)
     # df.reset_index(drop=True, inplace=True)
-    return df.to_dict('records')
+    jobs = df.to_dict('records')
+    
+    # Apply current config filters to existing jobs
+    jobs = filter_jobs_by_config(jobs, current_config)
+    
+    return jobs
 
 def verify_db_schema():
     conn = sqlite3.connect(config["db_path"])
@@ -335,7 +401,7 @@ def verify_db_schema():
     conn.close()
 
 # Global variable to track search status
-search_status = {"running": False, "message": ""}
+search_status = {"running": False, "message": "", "completed": False, "completed_at": None}
 
 @app.route('/search_config')
 def search_config():
@@ -534,6 +600,7 @@ def execute_search():
     
     def run_search():
         global search_status
+        from datetime import datetime
         search_status["running"] = True
         search_status["message"] = "Search started..."
         try:
@@ -546,10 +613,16 @@ def execute_search():
             )
             if result.returncode == 0:
                 search_status["message"] = "Search completed successfully"
+                search_status["completed"] = True
+                search_status["completed_at"] = datetime.now().isoformat()
             else:
                 search_status["message"] = f"Search completed with errors: {result.stderr}"
+                search_status["completed"] = True
+                search_status["completed_at"] = datetime.now().isoformat()
         except Exception as e:
             search_status["message"] = f"Error executing search: {str(e)}"
+            search_status["completed"] = True
+            search_status["completed_at"] = datetime.now().isoformat()
         finally:
             search_status["running"] = False
     
