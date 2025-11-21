@@ -384,6 +384,10 @@
                 return;
             }
 
+            // Get the application to find job_id before deleting
+            const app = applications.find(a => a.id == appId);
+            const jobId = app ? app.job_id : null;
+
             fetch(`/api/applications/${appId}`, {
                 method: 'DELETE'
             })
@@ -395,11 +399,31 @@
                     applications = applications.filter(a => a.id != appId);
                     renderTable();
                     showMessage('Application deleted successfully', 'success');
+                    
+                    // Remove applied badge from jobs list if job_id exists
+                    if (jobId || data.job_id) {
+                        removeAppliedBadge(jobId || data.job_id);
+                    }
                 }
             })
             .catch(error => {
                 showMessage('Error deleting: ' + error, 'error');
             });
+        }
+
+        function removeAppliedBadge(jobId) {
+            // Use localStorage to signal badge removal
+            // The jobs page will check this on load/visibility change
+            if (jobId) {
+                localStorage.setItem('removeAppliedBadge_' + jobId, Date.now().toString());
+                
+                // Try to notify parent/opener window if exists
+                try {
+                    if (window.opener) {
+                        window.opener.postMessage({type: 'removeAppliedBadge', jobId: jobId}, '*');
+                    }
+                } catch(e) {}
+            }
         }
 
         function escapeHtml(text) {

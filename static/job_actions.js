@@ -1,11 +1,15 @@
 var selectedJob = null;
 
+// Multi-select filter state
+let selectedFilters = {
+    city: [],
+    title: [],
+    company: []
+};
+
 // Search and filter functionality
 document.addEventListener('DOMContentLoaded', function() {
     const searchBar = document.getElementById('search-bar');
-    const filterCity = document.getElementById('filter-city');
-    const filterTitle = document.getElementById('filter-title');
-    const filterCompany = document.getElementById('filter-company');
     const sortBy = document.getElementById('sort-by');
     
     // Populate filter dropdowns with unique values
@@ -15,18 +19,16 @@ document.addEventListener('DOMContentLoaded', function() {
     if (searchBar) {
         searchBar.addEventListener('input', applyAllFilters);
     }
-    if (filterCity) {
-        filterCity.addEventListener('change', applyAllFilters);
-    }
-    if (filterTitle) {
-        filterTitle.addEventListener('change', applyAllFilters);
-    }
-    if (filterCompany) {
-        filterCompany.addEventListener('change', applyAllFilters);
-    }
     if (sortBy) {
         sortBy.addEventListener('change', applyAllFilters);
     }
+    
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', function(event) {
+        if (!event.target.closest('.multi-select')) {
+            closeAllDropdowns();
+        }
+    });
 });
 
 function populateFilters() {
@@ -46,41 +48,95 @@ function populateFilters() {
     });
     
     // Populate city filter
-    const citySelect = document.getElementById('filter-city');
-    const sortedCities = Array.from(cities).sort();
-    sortedCities.forEach(function(city) {
-        const option = document.createElement('option');
-        option.value = city;
-        option.textContent = city;
-        citySelect.appendChild(option);
-    });
+    populateMultiSelect('city', Array.from(cities).sort());
     
     // Populate title filter
-    const titleSelect = document.getElementById('filter-title');
-    const sortedTitles = Array.from(titles).sort();
-    sortedTitles.forEach(function(title) {
-        const option = document.createElement('option');
-        option.value = title;
-        option.textContent = title;
-        titleSelect.appendChild(option);
-    });
+    populateMultiSelect('title', Array.from(titles).sort());
     
     // Populate company filter
-    const companySelect = document.getElementById('filter-company');
-    const sortedCompanies = Array.from(companies).sort();
-    sortedCompanies.forEach(function(company) {
-        const option = document.createElement('option');
-        option.value = company;
-        option.textContent = company;
-        companySelect.appendChild(option);
+    populateMultiSelect('company', Array.from(companies).sort());
+}
+
+function populateMultiSelect(type, options) {
+    const optionsContainer = document.getElementById(`${type}-options`);
+    optionsContainer.innerHTML = '';
+    
+    options.forEach(function(option) {
+        const div = document.createElement('div');
+        div.className = 'multi-select-option';
+        const safeId = `${type}-${option.replace(/[^a-zA-Z0-9]/g, '_')}_${Math.random().toString(36).substr(2, 9)}`;
+        const escapedValue = option.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        
+        div.innerHTML = `
+            <input type="checkbox" id="${safeId}" value="${escapedValue}" onchange="toggleFilter('${type}', this.value)">
+            <label for="${safeId}" style="cursor: pointer; flex: 1;">${option}</label>
+        `;
+        optionsContainer.appendChild(div);
     });
+}
+
+function toggleMultiSelect(type) {
+    const dropdown = document.getElementById(`filter-${type}-dropdown`);
+    const isOpen = dropdown.style.display === 'block';
+    
+    closeAllDropdowns();
+    
+    if (!isOpen) {
+        dropdown.style.display = 'block';
+        // Focus search input
+        setTimeout(() => {
+            document.getElementById(`${type}-search`).focus();
+        }, 10);
+    }
+}
+
+function closeAllDropdowns() {
+    document.querySelectorAll('.multi-select-dropdown').forEach(function(dropdown) {
+        dropdown.style.display = 'none';
+    });
+}
+
+function filterOptions(type, searchTerm) {
+    const options = document.querySelectorAll(`#${type}-options .multi-select-option`);
+    const term = searchTerm.toLowerCase();
+    
+    options.forEach(function(option) {
+        const label = option.querySelector('label').textContent.toLowerCase();
+        if (label.includes(term)) {
+            option.style.display = 'flex';
+        } else {
+            option.style.display = 'none';
+        }
+    });
+}
+
+function toggleFilter(type, value) {
+    // Decode HTML entities
+    const decodedValue = value.replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+    const index = selectedFilters[type].indexOf(decodedValue);
+    if (index > -1) {
+        selectedFilters[type].splice(index, 1);
+    } else {
+        selectedFilters[type].push(decodedValue);
+    }
+    
+    updateFilterDisplay(type);
+    applyAllFilters();
+}
+
+function updateFilterDisplay(type) {
+    const count = selectedFilters[type].length;
+    const countElement = document.getElementById(`${type}-count`);
+    
+    if (count === 0) {
+        countElement.textContent = `All ${type === 'city' ? 'Cities' : type === 'title' ? 'Job Titles' : 'Companies'}`;
+    } else {
+        countElement.textContent = `${count} selected`;
+    }
 }
 
 function applyAllFilters() {
     const searchTerm = document.getElementById('search-bar').value.toLowerCase();
-    const selectedCity = document.getElementById('filter-city').value;
-    const selectedTitle = document.getElementById('filter-title').value;
-    const selectedCompany = document.getElementById('filter-company').value;
     const sortBy = document.getElementById('sort-by').value;
     
     const jobItems = document.querySelectorAll('.job-item');
@@ -97,26 +153,26 @@ function applyAllFilters() {
             }
         }
         
-        // Apply city filter
-        if (shouldShow && selectedCity) {
+        // Apply city filter (multiple selection)
+        if (shouldShow && selectedFilters.city.length > 0) {
             const jobCity = jobItem.getAttribute('data-city');
-            if (jobCity !== selectedCity) {
+            if (!selectedFilters.city.includes(jobCity)) {
                 shouldShow = false;
             }
         }
         
-        // Apply title filter
-        if (shouldShow && selectedTitle) {
+        // Apply title filter (multiple selection)
+        if (shouldShow && selectedFilters.title.length > 0) {
             const jobTitle = jobItem.getAttribute('data-title');
-            if (jobTitle !== selectedTitle) {
+            if (!selectedFilters.title.includes(jobTitle)) {
                 shouldShow = false;
             }
         }
         
-        // Apply company filter
-        if (shouldShow && selectedCompany) {
+        // Apply company filter (multiple selection)
+        if (shouldShow && selectedFilters.company.length > 0) {
             const jobCompany = jobItem.getAttribute('data-company');
-            if (jobCompany !== selectedCompany) {
+            if (!selectedFilters.company.includes(jobCompany)) {
                 shouldShow = false;
             }
         }
@@ -282,9 +338,70 @@ function markAsApplied(jobId) {
             if (data.success) {
                 var jobCard = document.querySelector(`.job-item[data-job-id="${jobId}"]`);
                 jobCard.classList.add('job-item-applied');
+                jobCard.setAttribute('data-applied', '1');
+                
+                // Add Applied badge if it doesn't exist
+                var jobContent = jobCard.querySelector('.job-content');
+                var title = jobContent.querySelector('h3');
+                if (title && !title.querySelector('.applied-badge')) {
+                    var badge = document.createElement('span');
+                    badge.className = 'applied-badge';
+                    badge.textContent = 'Applied';
+                    title.appendChild(badge);
+                }
             }
         });
 }
+
+function removeAppliedBadge(jobId) {
+    var jobCard = document.querySelector(`.job-item[data-job-id="${jobId}"]`);
+    if (jobCard) {
+        jobCard.classList.remove('job-item-applied');
+        jobCard.setAttribute('data-applied', '0');
+        
+        // Remove Applied badge
+        var jobContent = jobCard.querySelector('.job-content');
+        if (jobContent) {
+            var title = jobContent.querySelector('h3');
+            if (title) {
+                var badge = title.querySelector('.applied-badge');
+                if (badge) {
+                    badge.remove();
+                }
+            }
+        }
+    }
+}
+
+// Listen for messages from application tracker
+window.addEventListener('message', function(event) {
+    if (event.data && event.data.type === 'removeAppliedBadge') {
+        removeAppliedBadge(event.data.jobId);
+    }
+});
+
+// Check localStorage for badge removal signals
+function checkForBadgeRemovals() {
+    const keys = Object.keys(localStorage);
+    keys.forEach(function(key) {
+        if (key.startsWith('removeAppliedBadge_')) {
+            const jobId = key.replace('removeAppliedBadge_', '');
+            removeAppliedBadge(parseInt(jobId));
+            localStorage.removeItem(key);
+        }
+    });
+}
+
+// Check on page load and visibility change
+document.addEventListener('DOMContentLoaded', function() {
+    checkForBadgeRemovals();
+});
+
+document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) {
+        checkForBadgeRemovals();
+    }
+});
 
 function markAsCoverLetter(jobId) {
     console.log('Marking job as cover letter: ' + jobId)

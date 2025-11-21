@@ -85,6 +85,21 @@
             .job-item-rejected {
                 background-color: #ffc7c7;
             }
+            .applied-badge {
+                display: inline-block;
+                background-color: #4CAF50;
+                color: white;
+                padding: 4px 10px;
+                border-radius: 12px;
+                font-size: 11px;
+                font-weight: bold;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-left: 8px;
+            }
+            .job-content {
+                position: relative;
+            }
             #search-bar:focus, #filter-city:focus, #filter-title:focus, #filter-company:focus, #sort-by:focus {
                 outline: none;
                 border-color: #45a049;
@@ -94,6 +109,96 @@
             }
             #filter-container select, #sort-by {
                 cursor: pointer;
+            }
+            .multi-select-wrapper {
+                position: relative;
+            }
+            .multi-select {
+                position: relative;
+            }
+            .multi-select-display {
+                padding: 10px;
+                border: 2px solid #4CAF50;
+                border-radius: 5px;
+                background-color: white;
+                cursor: pointer;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                font-size: 14px;
+            }
+            .multi-select-display:hover {
+                border-color: #45a049;
+            }
+            .dropdown-arrow {
+                color: #4CAF50;
+                font-size: 10px;
+            }
+            .multi-select-dropdown {
+                position: absolute;
+                top: 100%;
+                left: 0;
+                right: 0;
+                background: white;
+                border: 2px solid #4CAF50;
+                border-radius: 5px;
+                margin-top: 5px;
+                z-index: 1000;
+                max-height: 300px;
+                overflow-y: auto;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            }
+            .multi-select-search {
+                width: 100%;
+                padding: 8px;
+                border: none;
+                border-bottom: 1px solid #ddd;
+                border-radius: 5px 5px 0 0;
+                font-size: 14px;
+                box-sizing: border-box;
+            }
+            .multi-select-search:focus {
+                outline: none;
+            }
+            .multi-select-options {
+                max-height: 250px;
+                overflow-y: auto;
+            }
+            .multi-select-option {
+                padding: 8px 12px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                font-size: 14px;
+            }
+            .multi-select-option:hover {
+                background-color: #f0f0f0;
+            }
+            .multi-select-option input[type="checkbox"] {
+                margin-right: 8px;
+            }
+            .multi-select-option.selected {
+                background-color: #e8f5e9;
+            }
+            .selected-tags {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 5px;
+                margin-top: 5px;
+            }
+            .selected-tag {
+                background-color: #4CAF50;
+                color: white;
+                padding: 3px 8px;
+                border-radius: 12px;
+                font-size: 11px;
+                display: inline-flex;
+                align-items: center;
+                gap: 5px;
+            }
+            .selected-tag .remove-tag {
+                cursor: pointer;
+                font-weight: bold;
             }
             .job-button {
                 background-color: #4CAF50; /* Green */
@@ -141,22 +246,52 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h2 style="margin: 0;">Jobs List</h2>
                     <div style="display: flex; gap: 10px;">
-                        <a href="/application_tracker" style="color: #4CAF50; text-decoration: none; font-weight: bold; padding: 8px 15px; border: 2px solid #4CAF50; border-radius: 5px; transition: all 0.3s;">📊 Application Tracker</a>
-                        <a href="/search_config" style="color: #4CAF50; text-decoration: none; font-weight: bold; padding: 8px 15px; border: 2px solid #4CAF50; border-radius: 5px; transition: all 0.3s;">⚙️ Configure Search</a>
+                        <a href="/application_tracker" style="color: #4CAF50; text-decoration: none; font-weight: bold; padding: 8px 15px; border: 2px solid #4CAF50; border-radius: 5px; transition: all 0.3s;">Application Tracker</a>
+                        <a href="/search_config" style="color: #4CAF50; text-decoration: none; font-weight: bold; padding: 8px 15px; border: 2px solid #4CAF50; border-radius: 5px; transition: all 0.3s;">Configure Search</a>
                     </div>
                 </div>
                 <input type="text" id="search-bar" placeholder="Search jobs by title, company, or location..." style="width: 100%; padding: 10px; margin-bottom: 15px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; box-sizing: border-box;">
                 
                 <div id="filter-container" style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
-                    <select id="filter-city" style="flex: 1; min-width: 120px; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; box-sizing: border-box;">
-                        <option value="">All Cities</option>
-                    </select>
-                    <select id="filter-title" style="flex: 1; min-width: 120px; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; box-sizing: border-box;">
-                        <option value="">All Job Titles</option>
-                    </select>
-                    <select id="filter-company" style="flex: 1; min-width: 120px; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; box-sizing: border-box;">
-                        <option value="">All Companies</option>
-                    </select>
+                    <div class="multi-select-wrapper" style="flex: 1; min-width: 200px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #4CAF50; font-size: 12px;">City</label>
+                        <div class="multi-select" id="filter-city-multi">
+                            <div class="multi-select-display" onclick="toggleMultiSelect('city')">
+                                <span class="selected-count" id="city-count">All Cities</span>
+                                <span class="dropdown-arrow">▼</span>
+                            </div>
+                            <div class="multi-select-dropdown" id="filter-city-dropdown" style="display: none;">
+                                <input type="text" class="multi-select-search" placeholder="Search cities..." id="city-search" onkeyup="filterOptions('city', this.value)">
+                                <div class="multi-select-options" id="city-options"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="multi-select-wrapper" style="flex: 1; min-width: 200px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #4CAF50; font-size: 12px;">Job Title</label>
+                        <div class="multi-select" id="filter-title-multi">
+                            <div class="multi-select-display" onclick="toggleMultiSelect('title')">
+                                <span class="selected-count" id="title-count">All Job Titles</span>
+                                <span class="dropdown-arrow">▼</span>
+                            </div>
+                            <div class="multi-select-dropdown" id="filter-title-dropdown" style="display: none;">
+                                <input type="text" class="multi-select-search" placeholder="Search titles..." id="title-search" onkeyup="filterOptions('title', this.value)">
+                                <div class="multi-select-options" id="title-options"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="multi-select-wrapper" style="flex: 1; min-width: 200px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #4CAF50; font-size: 12px;">Company</label>
+                        <div class="multi-select" id="filter-company-multi">
+                            <div class="multi-select-display" onclick="toggleMultiSelect('company')">
+                                <span class="selected-count" id="company-count">All Companies</span>
+                                <span class="dropdown-arrow">▼</span>
+                            </div>
+                            <div class="multi-select-dropdown" id="filter-company-dropdown" style="display: none;">
+                                <input type="text" class="multi-select-search" placeholder="Search companies..." id="company-search" onkeyup="filterOptions('company', this.value)">
+                                <div class="multi-select-options" id="company-options"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 
                 <div id="sort-container" style="margin-bottom: 15px;">
@@ -175,9 +310,14 @@
                 
                 <div id="jobs-container">
                 {% for job in jobs %}
-                <a class="{% if job.rejected == 1 %}job-item job-item-rejected{% elif job.interview == 1 %}job-item job-item-interview{% elif job.applied == 1 %}job-item job-item-applied{% else %}job-item{% endif %}"  href="#" onclick="event.preventDefault(); showJobDetails('{{ job.id }}')" data-job-id="{{ job.id }}" data-city="{{ job.location }}" data-title="{{ job.title }}" data-company="{{ job.company }}" data-date="{{ job.date }}">
+                <a class="{% if job.rejected == 1 %}job-item job-item-rejected{% elif job.interview == 1 %}job-item job-item-interview{% elif job.applied == 1 %}job-item job-item-applied{% else %}job-item{% endif %}"  href="#" onclick="event.preventDefault(); showJobDetails('{{ job.id }}')" data-job-id="{{ job.id }}" data-city="{{ job.location }}" data-title="{{ job.title }}" data-company="{{ job.company }}" data-date="{{ job.date }}" data-applied="{{ job.applied or 0 }}">
                     <div class="job-content">
-                        <h3>{{ job.title }}</h3>
+                        <h3>
+                            {{ job.title }}
+                            {% if job.applied == 1 %}
+                            <span class="applied-badge">Applied</span>
+                            {% endif %}
+                        </h3>
                         <p>{{ job.company }}, {{ job.location }}</p>
                         <p>{{ job.date }}</p>
                     </div>

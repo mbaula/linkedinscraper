@@ -126,6 +126,17 @@ def mark_applied(job_id):
     conn.close()
     return jsonify({"success": "Job marked as applied"}), 200
 
+@app.route('/unmark_applied/<int:job_id>', methods=['POST'])
+def unmark_applied(job_id):
+    """Unmark a job as applied"""
+    conn = sqlite3.connect(config["db_path"])
+    cursor = conn.cursor()
+    query = "UPDATE jobs SET applied = 0 WHERE id = ?"
+    cursor.execute(query, (job_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": "Job unmarked as applied"}), 200
+
 @app.route('/mark_interview/<int:job_id>', methods=['POST'])
 def mark_interview(job_id):
     print("Interview clicked!")
@@ -446,14 +457,26 @@ def update_application(app_id):
 
 @app.route('/api/applications/<int:app_id>', methods=['DELETE'])
 def delete_application(app_id):
-    """Delete an application"""
+    """Delete an application and unmark the job as applied"""
     try:
         conn = sqlite3.connect(config["db_path"])
         cursor = conn.cursor()
+        
+        # Get the job_id before deleting
+        cursor.execute("SELECT job_id FROM applications WHERE id = ?", (app_id,))
+        result = cursor.fetchone()
+        job_id = result[0] if result else None
+        
+        # Delete the application
         cursor.execute("DELETE FROM applications WHERE id = ?", (app_id,))
+        
+        # Unmark the job as applied if it has a job_id
+        if job_id:
+            cursor.execute("UPDATE jobs SET applied = 0 WHERE id = ?", (job_id,))
+        
         conn.commit()
         conn.close()
-        return jsonify({"success": True}), 200
+        return jsonify({"success": True, "job_id": job_id}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
