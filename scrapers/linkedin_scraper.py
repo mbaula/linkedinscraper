@@ -155,3 +155,4 @@ class LinkedInScraper(BaseScraper):
         else:
             return "Could not find Job Description"
 
+

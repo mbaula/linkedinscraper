@@ -11,6 +11,7 @@ let selectedFilters = {
 document.addEventListener('DOMContentLoaded', function() {
     const searchBar = document.getElementById('search-bar');
     const sortBy = document.getElementById('sort-by');
+    const filterDate = document.getElementById('filter-date');
     
     // Check if search was completed and refresh if needed
     checkForSearchCompletion();
@@ -24,6 +25,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     if (sortBy) {
         sortBy.addEventListener('change', applyAllFilters);
+    }
+    if (filterDate) {
+        filterDate.addEventListener('change', applyAllFilters);
     }
     
     // Close dropdowns when clicking outside
@@ -168,9 +172,67 @@ function updateFilterDisplay(type) {
     }
 }
 
+function parseJobDate(dateString) {
+    /**
+     * Parse job date string to Date object.
+     * Handles various date formats from different sources.
+     */
+    if (!dateString) return null;
+    
+    try {
+        // Try ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
+        const date = new Date(dateString);
+        if (!isNaN(date.getTime())) {
+            return date;
+        }
+        
+        // Try parsing as just date part
+        const dateOnly = dateString.split('T')[0];
+        const date2 = new Date(dateOnly);
+        if (!isNaN(date2.getTime())) {
+            return date2;
+        }
+    } catch (e) {
+        console.warn('Could not parse date:', dateString);
+    }
+    
+    return null;
+}
+
+function isDateInRange(jobDate, range) {
+    /**
+     * Check if job date is within the specified range.
+     * range: '24h', '3d', '1w', '2w', '1m', or empty string for all
+     */
+    if (!range || !jobDate) return true;
+    
+    const now = new Date();
+    const jobDateObj = parseJobDate(jobDate);
+    if (!jobDateObj) return true; // If we can't parse the date, show it
+    
+    const diffMs = now - jobDateObj;
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    
+    switch (range) {
+        case '24h':
+            return diffDays <= 1;
+        case '3d':
+            return diffDays <= 3;
+        case '1w':
+            return diffDays <= 7;
+        case '2w':
+            return diffDays <= 14;
+        case '1m':
+            return diffDays <= 30;
+        default:
+            return true;
+    }
+}
+
 function applyAllFilters() {
     const searchTerm = document.getElementById('search-bar').value.toLowerCase();
     const sortBy = document.getElementById('sort-by').value;
+    const dateFilter = document.getElementById('filter-date') ? document.getElementById('filter-date').value : '';
     
     const jobItems = document.querySelectorAll('.job-item');
     const visibleJobs = [];
@@ -182,6 +244,14 @@ function applyAllFilters() {
         if (searchTerm) {
             const jobContent = jobItem.textContent.toLowerCase();
             if (!jobContent.includes(searchTerm)) {
+                shouldShow = false;
+            }
+        }
+        
+        // Apply date filter
+        if (shouldShow && dateFilter) {
+            const jobDate = jobItem.getAttribute('data-date');
+            if (!isDateInRange(jobDate, dateFilter)) {
                 shouldShow = false;
             }
         }

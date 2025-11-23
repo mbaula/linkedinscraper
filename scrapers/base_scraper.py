@@ -114,3 +114,4 @@ class BaseScraper(ABC):
         }
         return normalized
 
+
