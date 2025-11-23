@@ -1,16 +1,14 @@
-import requests
 import json
 import sqlite3
 import sys
 from sqlite3 import Error
-from bs4 import BeautifulSoup
 import time as tm
 from itertools import groupby
 from datetime import datetime, timedelta, time
 import pandas as pd
-from urllib.parse import quote
 from langdetect import detect
 from langdetect.lang_detect_exception import LangDetectException
+from scrapers.linkedin_scraper import LinkedInScraper
 
 
 def load_config(file_name):
@@ -18,78 +16,8 @@ def load_config(file_name):
     with open(file_name) as f:
         return json.load(f)
 
-def get_with_retry(url, config, retries=3, delay=1):
-    # Get the URL with retries and delay
-    for i in range(retries):
-        try:
-            if len(config['proxies']) > 0:
-                r = requests.get(url, headers=config['headers'], proxies=config['proxies'], timeout=5)
-            else:
-                r = requests.get(url, headers=config['headers'], timeout=5)
-            return BeautifulSoup(r.content, 'html.parser')
-        except requests.exceptions.Timeout:
-            print(f"Timeout occurred for URL: {url}, retrying in {delay}s...")
-            tm.sleep(delay)
-        except Exception as e:
-            print(f"An error occurred while retrieving the URL: {url}, error: {e}")
-    return None
-
-def transform(soup):
-    # Parsing the job card info (title, company, location, date, job_url) from the beautiful soup object
-    joblist = []
-    try:
-        divs = soup.find_all('div', class_='base-search-card__info')
-    except:
-        print("Empty page, no jobs found")
-        return joblist
-    for item in divs:
-        title = item.find('h3').text.strip()
-        company = item.find('a', class_='hidden-nested-link')
-        location = item.find('span', class_='job-search-card__location')
-        parent_div = item.parent
-        entity_urn = parent_div['data-entity-urn']
-        job_posting_id = entity_urn.split(':')[-1]
-        job_url = 'https://www.linkedin.com/jobs/view/'+job_posting_id+'/'
-
-        date_tag_new = item.find('time', class_ = 'job-search-card__listdate--new')
-        date_tag = item.find('time', class_='job-search-card__listdate')
-        date = date_tag['datetime'] if date_tag else date_tag_new['datetime'] if date_tag_new else ''
-        job_description = ''
-        job = {
-            'title': title,
-            'company': company.text.strip().replace('\n', ' ') if company else '',
-            'location': location.text.strip() if location else '',
-            'date': date,
-            'job_url': job_url,
-            'job_description': job_description,
-            'applied': 0,
-            'hidden': 0,
-            'interview': 0,
-            'rejected': 0
-        }
-        joblist.append(job)
-    return joblist
-
-def transform_job(soup):
-    div = soup.find('div', class_='description__text description__text--rich')
-    if div:
-        # Remove unwanted elements
-        for element in div.find_all(['span', 'a']):
-            element.decompose()
-
-        # Replace bullet points
-        for ul in div.find_all('ul'):
-            for li in ul.find_all('li'):
-                li.insert(0, '-')
-
-        text = div.get_text(separator='\n').strip()
-        text = text.replace('\n\n', '')
-        text = text.replace('::marker', '-')
-        text = text.replace('-\n', '- ')
-        text = text.replace('Show less', '').replace('Show more', '')
-        return text
-    else:
-        return "Could not find Job Description"
+# LinkedIn-specific functions moved to scrapers/linkedin_scraper.py
+# Using modular scraper structure
 
 def safe_detect(text):
     try:
@@ -224,23 +152,27 @@ def job_exists(df, job):
     return ((df['job_url'] == job['job_url']).any() | (((df['title'] == job['title']) & (df['company'] == job['company']) & (df['date'] == job['date'])).any()))
 
 def get_jobcards(config):
-    #Function to get the job cards from the search results page
-    all_jobs = []
-    for k in range(0, config['rounds']):
-        for query in config['search_queries']:
-            keywords = quote(query['keywords']) # URL encode the keywords
-            location = quote(query['location']) # URL encode the location
-            for i in range (0, config['pages_to_scrape']):
-                url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={keywords}&location={location}&f_TPR=&f_WT={query['f_WT']}&geoId=&f_TPR={config['timespan']}&start={25*i}"
-                soup = get_with_retry(url, config)
-                jobs = transform(soup)
-                all_jobs = all_jobs + jobs
-                print("Finished scraping page: ", url)
-    print ("Total job cards scraped: ", len(all_jobs))
+    """
+    Get job cards using the modular scraper system.
+    Currently uses LinkedIn scraper, but can be extended to support multiple sources.
+    """
+    # Initialize LinkedIn scraper
+    linkedin_scraper = LinkedInScraper(config)
+    
+    # Get job cards from LinkedIn
+    all_jobs = linkedin_scraper.get_job_cards()
+    
+    # Normalize jobs (add source field, ensure consistent format)
+    all_jobs = [linkedin_scraper.normalize_job(job) for job in all_jobs]
+    
+    # Remove duplicates
     all_jobs = remove_duplicates(all_jobs, config)
-    print ("Total job cards after removing duplicates: ", len(all_jobs))
+    print(f"Total job cards after removing duplicates: {len(all_jobs)}")
+    
+    # Remove irrelevant jobs based on filters
     all_jobs = remove_irrelevant_jobs(all_jobs, config)
-    print ("Total job cards after removing irrelevant jobs: ", len(all_jobs))
+    print(f"Total job cards after removing irrelevant jobs: {len(all_jobs)}")
+    
     return all_jobs
 
 def find_new_jobs(all_jobs, conn, config):
@@ -260,6 +192,28 @@ def find_new_jobs(all_jobs, conn, config):
     new_joblist = [job for job in all_jobs if not job_exists(jobs_db, job) and not job_exists(filtered_jobs_db, job)]
     return new_joblist
 
+def verify_jobs_table_schema(conn, table_name):
+    """Ensure the jobs table has the source column for multi-source support."""
+    if conn is None:
+        return
+    
+    cursor = conn.cursor()
+    try:
+        # Check if table exists
+        cursor.execute(f"SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{table_name}'")
+        if cursor.fetchone()[0] == 1:
+            # Get table info
+            cursor.execute(f"PRAGMA table_info({table_name})")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            # Add source column if it doesn't exist
+            if 'source' not in columns:
+                cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN source TEXT DEFAULT 'linkedin'")
+                conn.commit()
+                print(f"Added source column to {table_name} table")
+    except Exception as e:
+        print(f"Error verifying table schema: {e}")
+
 def main(config_file):
     start_time = tm.perf_counter()
     job_list = []
@@ -267,9 +221,18 @@ def main(config_file):
     config = load_config(config_file)
     jobs_tablename = config['jobs_tablename'] # name of the table to store the "approved" jobs
     filtered_jobs_tablename = config['filtered_jobs_tablename'] # name of the table to store the jobs that have been filtered out based on description keywords (so that in future they are not scraped again)
+    
+    # Initialize scraper (for now LinkedIn, but will support multiple sources later)
+    linkedin_scraper = LinkedInScraper(config)
+    
     #Scrape search results page and get job cards. This step might take a while based on the number of pages and search queries.
     all_jobs = get_jobcards(config)
     conn = create_connection(config)
+    
+    # Verify schema has source column
+    verify_jobs_table_schema(conn, jobs_tablename)
+    verify_jobs_table_schema(conn, filtered_jobs_tablename)
+    
     #filtering out jobs that are already in the database
     all_jobs = find_new_jobs(all_jobs, conn, config)
     print ("Total new jobs found after comparing to the database: ", len(all_jobs))
@@ -277,14 +240,22 @@ def main(config_file):
     if len(all_jobs) > 0:
 
         for job in all_jobs:
+            # Skip jobs with invalid dates
+            if not job.get('date'):
+                continue
+                
             job_date = convert_date_format(job['date'])
+            if not job_date:
+                continue
+                
             job_date = datetime.combine(job_date, time())
             #if job is older than a week, skip it
             if job_date < datetime.now() - timedelta(days=config['days_to_scrape']):
                 continue
             print('Found new job: ', job['title'], 'at ', job['company'], job['job_url'])
-            desc_soup = get_with_retry(job['job_url'], config)
-            job['job_description'] = transform_job(desc_soup)
+            
+            # Get job description using the scraper
+            job['job_description'] = linkedin_scraper.get_job_description(job['job_url'])
             language = safe_detect(job['job_description'])
             if language not in config['languages']:
                 print('Job description language not supported: ', language)

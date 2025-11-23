@@ -366,17 +366,24 @@ def verify_db_schema():
     # Get the table information
     cursor.execute("PRAGMA table_info(jobs)")
     table_info = cursor.fetchall()
+    column_names = [column[1] for column in table_info]
 
     # Check if the "cover_letter" column exists
-    if "cover_letter" not in [column[1] for column in table_info]:
+    if "cover_letter" not in column_names:
         # If it doesn't exist, add it
         cursor.execute("ALTER TABLE jobs ADD COLUMN cover_letter TEXT")
         print("Added cover_letter column to jobs table")
 
-    if "resume" not in [column[1] for column in table_info]:
+    if "resume" not in column_names:
         # If it doesn't exist, add it
         cursor.execute("ALTER TABLE jobs ADD COLUMN resume TEXT")
         print("Added resume column to jobs table")
+
+    # Check if the "source" column exists (for multi-source support)
+    if "source" not in column_names:
+        # If it doesn't exist, add it
+        cursor.execute("ALTER TABLE jobs ADD COLUMN source TEXT DEFAULT 'linkedin'")
+        print("Added source column to jobs table")
 
     # Create applications table if it doesn't exist
     cursor.execute("""
