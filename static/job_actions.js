@@ -4,7 +4,8 @@ var selectedJob = null;
 let selectedFilters = {
     city: [],
     title: [],
-    company: []
+    company: [],
+    status: []
 };
 
 // Search and filter functionality
@@ -120,10 +121,13 @@ function toggleMultiSelect(type) {
     
     if (!isOpen) {
         dropdown.style.display = 'block';
-        // Focus search input
-        setTimeout(() => {
-            document.getElementById(`${type}-search`).focus();
-        }, 10);
+        // Focus search input (if it exists - status filter doesn't have one)
+        const searchInput = document.getElementById(`${type}-search`);
+        if (searchInput) {
+            setTimeout(() => {
+                searchInput.focus();
+            }, 10);
+        }
     }
 }
 
@@ -157,6 +161,14 @@ function toggleFilter(type, value) {
         selectedFilters[type].push(decodedValue);
     }
     
+    // Update checkbox state for status filter
+    if (type === 'status') {
+        const checkbox = document.getElementById(`filter-status-${decodedValue}`);
+        if (checkbox) {
+            checkbox.checked = index === -1;
+        }
+    }
+    
     updateFilterDisplay(type);
     applyAllFilters();
 }
@@ -165,8 +177,18 @@ function updateFilterDisplay(type) {
     const count = selectedFilters[type].length;
     const countElement = document.getElementById(`${type}-count`);
     
+    if (!countElement) return;
+    
     if (count === 0) {
-        countElement.textContent = `All ${type === 'city' ? 'Cities' : type === 'title' ? 'Job Titles' : 'Companies'}`;
+        if (type === 'city') {
+            countElement.textContent = 'All Cities';
+        } else if (type === 'title') {
+            countElement.textContent = 'All Job Titles';
+        } else if (type === 'company') {
+            countElement.textContent = 'All Companies';
+        } else if (type === 'status') {
+            countElement.textContent = 'All Status';
+        }
     } else {
         countElement.textContent = `${count} selected`;
     }
@@ -279,6 +301,39 @@ function applyAllFilters() {
             const jobCompany = (jobItem.getAttribute('data-company') || '').toLowerCase();
             const selectedCompaniesLower = selectedFilters.company.map(c => c.toLowerCase());
             if (!selectedCompaniesLower.includes(jobCompany)) {
+                shouldShow = false;
+            }
+        }
+        
+        // Apply status filter (saved, applied, interview, rejected)
+        if (shouldShow && selectedFilters.status.length > 0) {
+            const jobSaved = jobItem.getAttribute('data-saved') === '1';
+            const jobApplied = jobItem.getAttribute('data-applied') === '1';
+            const jobInterview = jobItem.classList.contains('job-item-interview');
+            const jobRejected = jobItem.classList.contains('job-item-rejected');
+            
+            let matchesStatus = false;
+            for (let i = 0; i < selectedFilters.status.length; i++) {
+                const status = selectedFilters.status[i];
+                if (status === 'saved' && jobSaved) {
+                    matchesStatus = true;
+                    break;
+                }
+                if (status === 'applied' && jobApplied) {
+                    matchesStatus = true;
+                    break;
+                }
+                if (status === 'interview' && jobInterview) {
+                    matchesStatus = true;
+                    break;
+                }
+                if (status === 'rejected' && jobRejected) {
+                    matchesStatus = true;
+                    break;
+                }
+            }
+            
+            if (!matchesStatus) {
                 shouldShow = false;
             }
         }
@@ -558,6 +613,7 @@ function updateJobDetails(job) {
     html += '<button class="job-button" onclick="markAsApplied(' + job.id + ')">Applied</button>';
     html += '<button class="job-button" onclick="markAsRejected(' + job.id + ')">Rejected</button>';
     html += '<button class="job-button" onclick="markAsInterview(' + job.id + ')">Interview</button>';
+    html += '<button class="job-button" id="save-btn-' + job.id + '" onclick="toggleSaved(' + job.id + ')">' + (job.saved ? 'Unsave' : 'Save') + '</button>';
     html += '<button class="job-button" onclick="hideJob(' + job.id + ')">Hide</button>';
     html += '</div>';
     html += '<p class="job-detail">' + job.company + ', ' + job.location + '</p>';
@@ -951,6 +1007,111 @@ function markAsInterview(jobId) {
             if (data.success) {
                 var jobCard = document.querySelector(`.job-item[data-job-id="${jobId}"]`);
                 jobCard.classList.add('job-item-interview');
+            }
+        });
+}
+
+function toggleSaved(jobId) {
+    var jobCard = document.querySelector(`.job-item[data-job-id="${jobId}"]`);
+    if (!jobCard) {
+        console.error('Job card not found for job ID:', jobId);
+        return;
+    }
+    
+    var isSaved = jobCard.getAttribute('data-saved') === '1';
+    var saveBtn = document.getElementById('save-btn-' + jobId);
+    
+    // Update UI immediately for better UX
+    if (isSaved) {
+        // Unsave - update UI immediately
+        jobCard.setAttribute('data-saved', '0');
+        jobCard.classList.remove('job-item-saved');
+        if (saveBtn) saveBtn.textContent = 'Save';
+        
+        // Remove saved badge
+        var jobContent = jobCard.querySelector('.job-content');
+        if (jobContent) {
+            var title = jobContent.querySelector('h3');
+            if (title) {
+                var savedBadge = title.querySelector('.saved-badge');
+                if (savedBadge) {
+                    savedBadge.remove();
+                }
+            }
+        }
+    } else {
+        // Save - update UI immediately
+        jobCard.setAttribute('data-saved', '1');
+        jobCard.classList.add('job-item-saved');
+        if (saveBtn) saveBtn.textContent = 'Unsave';
+        
+        // Add saved badge
+        var jobContent = jobCard.querySelector('.job-content');
+        if (jobContent) {
+            var title = jobContent.querySelector('h3');
+            if (title && !title.querySelector('.saved-badge')) {
+                var badge = document.createElement('span');
+                badge.className = 'saved-badge';
+                badge.textContent = 'Saved';
+                title.appendChild(badge);
+            }
+        }
+    }
+    
+    // Make API call
+    var endpoint = isSaved ? '/unmark_saved/' : '/mark_saved/';
+    
+    fetch(endpoint + jobId, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            console.log(data);
+            if (data.success) {
+                // Reapply filters to update display
+                applyAllFilters();
+            } else {
+                // Revert UI changes if API call failed
+                if (isSaved) {
+                    jobCard.setAttribute('data-saved', '1');
+                    jobCard.classList.add('job-item-saved');
+                    if (saveBtn) saveBtn.textContent = 'Unsave';
+                    var jobContent = jobCard.querySelector('.job-content');
+                    if (jobContent) {
+                        var title = jobContent.querySelector('h3');
+                        if (title && !title.querySelector('.saved-badge')) {
+                            var badge = document.createElement('span');
+                            badge.className = 'saved-badge';
+                            badge.textContent = 'Saved';
+                            title.appendChild(badge);
+                        }
+                    }
+                } else {
+                    jobCard.setAttribute('data-saved', '0');
+                    jobCard.classList.remove('job-item-saved');
+                    if (saveBtn) saveBtn.textContent = 'Save';
+                    var jobContent = jobCard.querySelector('.job-content');
+                    if (jobContent) {
+                        var title = jobContent.querySelector('h3');
+                        if (title) {
+                            var savedBadge = title.querySelector('.saved-badge');
+                            if (savedBadge) {
+                                savedBadge.remove();
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error toggling saved status:', error);
+            // Revert UI changes on error
+            if (isSaved) {
+                jobCard.setAttribute('data-saved', '1');
+                jobCard.classList.add('job-item-saved');
+                if (saveBtn) saveBtn.textContent = 'Unsave';
+            } else {
+                jobCard.setAttribute('data-saved', '0');
+                jobCard.classList.remove('job-item-saved');
+                if (saveBtn) saveBtn.textContent = 'Save';
             }
         });
 }

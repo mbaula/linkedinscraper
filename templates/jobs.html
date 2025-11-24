@@ -85,6 +85,21 @@
             .job-item-rejected {
                 background-color: #ffc7c7;
             }
+            .job-item-saved {
+                background-color: #fff9c7;
+            }
+            .saved-badge {
+                display: inline-block;
+                background-color: #ffc107;
+                color: #333;
+                padding: 4px 10px;
+                border-radius: 12px;
+                font-size: 11px;
+                font-weight: bold;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-left: 8px;
+            }
             .applied-badge {
                 display: inline-block;
                 background-color: #4CAF50;
@@ -517,6 +532,35 @@
                             </div>
                         </div>
                     </div>
+                    <div class="multi-select-wrapper" style="flex: 1; min-width: 200px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #4CAF50; font-size: 12px;">Status</label>
+                        <div class="multi-select" id="filter-status-multi">
+                            <div class="multi-select-display" onclick="toggleMultiSelect('status')">
+                                <span class="selected-count" id="status-count">All Status</span>
+                                <span class="dropdown-arrow">▼</span>
+                            </div>
+                            <div class="multi-select-dropdown" id="filter-status-dropdown" style="display: none;">
+                                <div class="multi-select-options" id="status-options">
+                                    <div class="multi-select-option" onclick="toggleFilter('status', 'saved')">
+                                        <input type="checkbox" id="filter-status-saved" value="saved" onchange="toggleFilter('status', this.value)">
+                                        <label for="filter-status-saved">Saved</label>
+                                    </div>
+                                    <div class="multi-select-option" onclick="toggleFilter('status', 'applied')">
+                                        <input type="checkbox" id="filter-status-applied" value="applied" onchange="toggleFilter('status', this.value)">
+                                        <label for="filter-status-applied">Applied</label>
+                                    </div>
+                                    <div class="multi-select-option" onclick="toggleFilter('status', 'interview')">
+                                        <input type="checkbox" id="filter-status-interview" value="interview" onchange="toggleFilter('status', this.value)">
+                                        <label for="filter-status-interview">Interview</label>
+                                    </div>
+                                    <div class="multi-select-option" onclick="toggleFilter('status', 'rejected')">
+                                        <input type="checkbox" id="filter-status-rejected" value="rejected" onchange="toggleFilter('status', this.value)">
+                                        <label for="filter-status-rejected">Rejected</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 
                 <div id="date-filter-container" style="margin-bottom: 15px;">
@@ -547,12 +591,15 @@
                 
                 <div id="jobs-container">
                 {% for job in jobs %}
-                <a class="{% if job.rejected == 1 %}job-item job-item-rejected{% elif job.interview == 1 %}job-item job-item-interview{% elif job.applied == 1 %}job-item job-item-applied{% else %}job-item{% endif %}"  href="#" onclick="event.preventDefault(); showJobDetails('{{ job.id }}')" data-job-id="{{ job.id }}" data-city="{{ job.location }}" data-title="{{ job.title }}" data-company="{{ job.company }}" data-date="{{ job.date }}" data-applied="{{ job.applied or 0 }}">
+                <a class="{% if job.rejected == 1 %}job-item job-item-rejected{% elif job.interview == 1 %}job-item job-item-interview{% elif job.applied == 1 %}job-item job-item-applied{% elif job.saved == 1 %}job-item job-item-saved{% else %}job-item{% endif %}"  href="#" onclick="event.preventDefault(); showJobDetails('{{ job.id }}')" data-job-id="{{ job.id }}" data-city="{{ job.location }}" data-title="{{ job.title }}" data-company="{{ job.company }}" data-date="{{ job.date }}" data-applied="{{ job.applied or 0 }}" data-saved="{{ job.saved or 0 }}">
                     <div class="job-content">
                         <h3>
                             {{ job.title }}
                             {% if job.applied == 1 %}
                             <span class="applied-badge">Applied</span>
+                            {% endif %}
+                            {% if job.saved == 1 %}
+                            <span class="saved-badge">Saved</span>
                             {% endif %}
                         </h3>
                         <p>{{ job.company }}, {{ job.location }}</p>

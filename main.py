@@ -249,13 +249,27 @@ def delete_old_unapplied_jobs(conn, config):
         # Calculate the cutoff date (as datetime object for comparison)
         cutoff_date = datetime.now() - timedelta(days=days_threshold)
         
-        # Get all unapplied jobs with date_loaded
-        cursor.execute(f"""
-            SELECT id, date_loaded FROM {jobs_tablename}
-            WHERE applied = 0 
-            AND date_loaded IS NOT NULL
-            AND date_loaded != ''
-        """)
+        # Get all unapplied and unsaved jobs with date_loaded
+        # Check if saved column exists
+        cursor.execute(f"PRAGMA table_info({jobs_tablename})")
+        columns = [column[1] for column in cursor.fetchall()]
+        has_saved_column = 'saved' in columns
+        
+        if has_saved_column:
+            cursor.execute(f"""
+                SELECT id, date_loaded FROM {jobs_tablename}
+                WHERE applied = 0 
+                AND saved = 0
+                AND date_loaded IS NOT NULL
+                AND date_loaded != ''
+            """)
+        else:
+            cursor.execute(f"""
+                SELECT id, date_loaded FROM {jobs_tablename}
+                WHERE applied = 0 
+                AND date_loaded IS NOT NULL
+                AND date_loaded != ''
+            """)
         
         jobs_to_delete = []
         for row in cursor.fetchall():

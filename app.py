@@ -150,6 +150,32 @@ def unmark_applied(job_id):
     conn.close()
     return jsonify({"success": "Job unmarked as applied"}), 200
 
+@app.route('/mark_saved/<int:job_id>', methods=['POST'])
+def mark_saved(job_id):
+    """Mark a job as saved"""
+    print("Saved clicked!")
+    conn = sqlite3.connect(config["db_path"])
+    cursor = conn.cursor()
+    query = "UPDATE jobs SET saved = 1 WHERE id = ?"
+    print(f'Executing query: {query} with job_id: {job_id}')
+    cursor.execute(query, (job_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": "Job marked as saved"}), 200
+
+@app.route('/unmark_saved/<int:job_id>', methods=['POST'])
+def unmark_saved(job_id):
+    """Unmark a job as saved"""
+    print("Unsave clicked!")
+    conn = sqlite3.connect(config["db_path"])
+    cursor = conn.cursor()
+    query = "UPDATE jobs SET saved = 0 WHERE id = ?"
+    print(f'Executing query: {query} with job_id: {job_id}')
+    cursor.execute(query, (job_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": "Job unmarked as saved"}), 200
+
 @app.route('/mark_interview/<int:job_id>', methods=['POST'])
 def mark_interview(job_id):
     print("Interview clicked!")
@@ -1110,6 +1136,13 @@ def verify_db_schema():
         # If it doesn't exist, add it
         cursor.execute("ALTER TABLE jobs ADD COLUMN source TEXT DEFAULT 'linkedin'")
         print("Added source column to jobs table")
+    
+    # Check if the "saved" column exists
+    if "saved" not in column_names:
+        # If it doesn't exist, add it
+        cursor.execute("ALTER TABLE jobs ADD COLUMN saved INTEGER DEFAULT 0")
+        conn.commit()
+        print("Added saved column to jobs table")
 
     # Create applications table if it doesn't exist
     cursor.execute("""
