@@ -19,6 +19,9 @@ from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.enums import TA_LEFT
 from datetime import datetime
+from docx import Document
+from docx.shared import Inches, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 def load_config(file_name):
     # Load the config file
@@ -447,11 +450,19 @@ def escape_xml_text(text):
     if not text:
         return ""
     
-    # First, handle dashes - convert Unicode dashes to HTML entities or regular hyphens
-    # Em dash (—) U+2014 -> HTML entity or regular hyphen
-    text = text.replace('—', '-')  # Em dash to regular hyphen
-    text = text.replace('–', '-')  # En dash to regular hyphen
-    # Keep regular hyphens (-) as is
+    # Convert all Unicode dash/hyphen variants to regular ASCII hyphens
+    # This prevents rendering issues in PDF
+    text = text.replace('\u2011', '-')  # Non-breaking hyphen (‑) U+2011
+    text = text.replace('\u2012', '-')  # Figure dash (‒) U+2012
+    text = text.replace('\u2013', '-')  # En dash (–) U+2013
+    text = text.replace('\u2014', '-')  # Em dash (—) U+2014
+    text = text.replace('\u2015', '-')  # Horizontal bar (―) U+2015
+    text = text.replace('\u2212', '-')  # Minus sign (−) U+2212
+    text = text.replace('\uFE58', '-')  # Small em dash (﹘) U+FE58
+    text = text.replace('\uFE63', '-')  # Small hyphen-minus (﹣) U+FE63
+    text = text.replace('\uFF0D', '-')  # Full-width hyphen-minus (－) U+FF0D
+    
+    # Keep regular ASCII hyphens (-) as is
     
     # Escape XML/HTML special characters (must escape & first!)
     text = text.replace('&', '&amp;')
@@ -461,6 +472,82 @@ def escape_xml_text(text):
     text = text.replace("'", '&apos;')
     
     return text
+
+def normalize_dashes_for_docx(text):
+    """Convert all Unicode dash variants to regular hyphens for DOCX"""
+    if not text:
+        return ""
+    
+    # Convert all Unicode dash/hyphen variants to regular ASCII hyphens
+    text = text.replace('\u2011', '-')  # Non-breaking hyphen (‑) U+2011
+    text = text.replace('\u2012', '-')  # Figure dash (‒) U+2012
+    text = text.replace('\u2013', '-')  # En dash (–) U+2013
+    text = text.replace('\u2014', '-')  # Em dash (—) U+2014
+    text = text.replace('\u2015', '-')  # Horizontal bar (―) U+2015
+    text = text.replace('\u2212', '-')  # Minus sign (−) U+2212
+    text = text.replace('\uFE58', '-')  # Small em dash (﹘) U+FE58
+    text = text.replace('\uFE63', '-')  # Small hyphen-minus (﹣) U+FE63
+    text = text.replace('\uFF0D', '-')  # Full-width hyphen-minus (－) U+FF0D
+    
+    return text
+
+@app.route('/api/cover-letter/docx/<int:job_id>', methods=['GET'])
+def generate_cover_letter_docx(job_id):
+    """Generate DOCX of cover letter"""
+    conn = sqlite3.connect(config["db_path"])
+    cursor = conn.cursor()
+    cursor.execute("SELECT cover_letter, title, company FROM jobs WHERE id = ?", (job_id,))
+    result = cursor.fetchone()
+    conn.close()
+    
+    if not result or not result[0]:
+        return jsonify({"error": "Cover letter not found"}), 404
+    
+    cover_letter_text = result[0]
+    job_title = result[1]
+    company = result[2]
+    
+    # Create DOCX document
+    doc = Document()
+    
+    # Set default font
+    style = doc.styles['Normal']
+    font = style.font
+    font.name = 'Calibri'
+    font.size = Pt(11)
+    
+    # Add cover letter content
+    # Split by paragraphs
+    paragraphs = cover_letter_text.split('\n\n')
+    for para in paragraphs:
+        if para.strip():
+            # Replace newlines within paragraphs with spaces
+            para_clean = para.replace('\n', ' ').strip()
+            if para_clean:
+                # Normalize dashes
+                para_clean = normalize_dashes_for_docx(para_clean)
+                # Add paragraph
+                p = doc.add_paragraph(para_clean)
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                # Set spacing
+                p.space_after = Pt(12)
+    
+    # Save to memory
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    
+    # Create response
+    filename = f"Cover_Letter_{company}_{job_title}_{datetime.now().strftime('%Y%m%d')}.docx"
+    filename = filename.replace(' ', '_').replace('/', '_')
+    
+    return Response(
+        buffer.getvalue(),
+        mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        headers={
+            'Content-Disposition': f'attachment; filename="{filename}"'
+        }
+    )
 
 @app.route('/api/cover-letter/pdf/<int:job_id>', methods=['GET'])
 def generate_cover_letter_pdf(job_id):
@@ -577,7 +664,48 @@ def get_CoverLetter(job_id):
     update_cover_letter_status(f"Using {provider.upper()} provider to generate cover letter...", job_id, False)
     
     # Build the prompt with strict instructions to only use resume information
-    user_prompt = ("CRITICAL: You must ONLY use information that is explicitly stated in the resume provided below. DO NOT make up, invent, or assume any skills, experiences, achievements, or qualifications that are not directly mentioned in the resume. If something is not in the resume, do not mention it.\n\nYou are a career coach helping a candidate write a cover letter. Write a cover letter for the position below using ONLY the information from the resume. Approach this in three steps:\n\nStep 1. Identify main challenges someone in this position would face based on the job description.\n\nStep 2. Write an attention-grabbing hook (100 words or less) that highlights ONLY the candidate's actual experience and qualifications from the resume. Use specific examples ONLY if they are mentioned in the resume. Do not invent examples or achievements.\n\nStep 3. Complete the cover letter (total 250 words) using ONLY information from the resume. Match the candidate's actual skills and experiences to the job requirements. Do not add any information not present in the resume.\n\nREMEMBER: Every skill, experience, achievement, and qualification you mention MUST be explicitly stated in the resume. If it's not in the resume, do not include it.\n\nJob Description: " + job['job_description'] + "\n\nCompany: " + job['company'] + "\n\nJob Title: " + job['title'] + "\n\nResume:\n" + resume)
+    user_prompt = ("""CRITICAL: You must ONLY use information that is explicitly stated in the resume provided below. DO NOT make up, invent, or assume any skills, experiences, achievements, or qualifications that are not directly mentioned in the resume. If something is not in the resume, do not mention it.
+
+CRITICAL - COVER LETTER FORMAT: A cover letter is a STORY, NOT a resume. It must be written in NARRATIVE PARAGRAPH form:
+- Write flowing paragraphs that tell a story, NOT bullet points, lists, or numbered items
+- DO NOT list accomplishments one after another like a resume
+- Connect experiences together in a narrative way that shows progression
+- Show how past work relates to the role they're applying for through storytelling
+- Write 3-4 well-developed paragraphs (each 4-6 sentences) with clear narrative flow
+- Each paragraph should have a clear purpose and flow naturally into the next
+- DO NOT just copy bullet points from the resume - instead, weave the information into narrative sentences that tell a story
+- Tell a story about the candidate's journey, challenges they faced, and how it relates to this opportunity
+- Write like you're telling a friend about your experience, not listing resume bullets
+
+IMPORTANT - AVOID AI TELLS: Write naturally and avoid features that make it obvious this is AI-generated:
+- Use ONLY regular ASCII hyphens (-), NEVER em dashes (—), en dashes (–), or non-breaking hyphens (‑)
+- Write percentages correctly: use 90% NOT 90 % (no space before % sign)
+- Avoid overly formal or flowery language
+- Don't use repetitive phrases or patterns
+- Write in a natural, human voice
+- Avoid excessive use of transition phrases like 'Furthermore', 'Moreover', 'In addition'
+- Use simple, direct language
+- Vary sentence structure naturally
+- Don't start every sentence with 'I'
+
+You are a career coach helping a candidate write a cover letter. Write a cover letter for the position below using ONLY the information from the resume. The cover letter MUST be in narrative paragraph form, NOT bullet points.
+
+Step 1. Identify main challenges someone in this position would face based on the job description.
+
+Step 2. Write an opening paragraph (4-5 sentences) that introduces the candidate and expresses genuine interest. Connect their background to why they're interested in this role. Write as flowing narrative that tells a story, NOT bullet points.
+
+Step 3. Write 2-3 body paragraphs (total 250 words) that tell a STORY about the candidate's relevant experience. Weave together experiences from the resume into narrative paragraphs that show how their work relates to this role. Write in paragraph form with flowing sentences that connect ideas and tell a story, NOT as a list of bullet points or accomplishments. Show progression, challenges faced, and connection between experiences. Make it read like a story about their career journey, not a resume. Each paragraph should flow naturally and tell part of the story.
+
+REMEMBER: Every skill, experience, achievement, and qualification you mention MUST be explicitly stated in the resume. If it's not in the resume, do not include it. Use ONLY regular ASCII hyphens (-), NEVER em dashes, en dashes, or non-breaking hyphens. Write in NARRATIVE PARAGRAPH form that tells a STORY, NOT bullet points, NOT lists, NOT numbered items.
+
+Job Description: """ + job['job_description'] + """
+
+Company: """ + job['company'] + """
+
+Job Title: """ + job['title'] + """
+
+Resume:
+""" + resume)
     if consideration:
         user_prompt += "\nConsider incorporating that " + consideration
 
@@ -594,7 +722,47 @@ def get_CoverLetter(job_id):
         if response:
             update_cover_letter_status("Initial draft generated. Refining cover letter...", job_id, False)
             # Refinement step
-            user_prompt2 = ("CRITICAL: You must ONLY use information that is explicitly stated in the resume provided below. DO NOT make up, invent, or assume any skills, experiences, achievements, or qualifications that are not directly mentioned in the resume.\n\nYou are helping improve a cover letter. Review the draft below and improve it while ensuring EVERY claim is backed by information in the resume.\n\nStep 1. Set formality: 1 = conversational, current draft = 10. Target formality = 7.\n\nStep 2. Identify 3-5 improvements, ensuring all examples come from the resume.\n\nStep 3. Rewrite the cover letter with formality = 7, using ONLY information from the resume. Remove any claims not supported by the resume. Avoid subjective qualifiers like 'drastic' or 'transformational'. Keep within 250 words.\n\nJob Description: " + job['job_description'] + "\n\nResume:\n" + resume + "\n\nCurrent Cover Letter Draft:\n" + response + "\n\nRespond with the improved cover letter only, ensuring all information comes from the resume.")
+            user_prompt2 = ("""CRITICAL: You must ONLY use information that is explicitly stated in the resume provided below. DO NOT make up, invent, or assume any skills, experiences, achievements, or qualifications that are not directly mentioned in the resume.
+
+CRITICAL - COVER LETTER FORMAT: The cover letter MUST be in NARRATIVE PARAGRAPH form that tells a STORY, NOT bullet points:
+- If the draft has bullet points, lists, numbered items, or reads like a resume, convert ALL of it into flowing narrative paragraphs
+- Write in paragraph form with complete sentences that flow together and tell a story
+- Tell a story that connects experiences and shows progression, don't just list accomplishments
+- Each paragraph should be 4-6 sentences that weave together related experiences into a narrative
+- Make it read like a story about their career journey, not a resume listing achievements
+- Show how experiences connect and build on each other
+- Write like you're telling a story, not listing resume bullets
+
+IMPORTANT - REMOVE AI TELLS: Review the draft and make it sound natural and human:
+- Replace ALL em dashes (—), en dashes (–), and non-breaking hyphens (‑) with regular ASCII hyphens (-)
+- Fix percentage spacing: remove spaces before % signs (write 90% NOT 90 %)
+- Remove overly formal or AI-sounding phrases
+- Eliminate repetitive patterns
+- Make it sound like a real person wrote it, not AI
+- Use simple, direct language
+- Avoid excessive transition words
+- Vary sentence structure naturally
+- Don't start every sentence with 'I'
+
+You are helping improve a cover letter. Review the draft below and improve it while ensuring EVERY claim is backed by information in the resume.
+
+Step 1. Check if the draft is written as bullet points, lists, or reads like a resume. If so, convert ALL of it into narrative paragraphs that tell a story with flowing sentences.
+
+Step 2. Set formality: 1 = conversational, current draft = 10. Target formality = 7.
+
+Step 3. Identify 3-5 improvements, ensuring all examples come from the resume. Also identify and remove any AI tells (em dashes, non-breaking hyphens, overly formal language, repetitive patterns). Ensure it's written as narrative paragraphs that tell a story, NOT bullet points or resume-style lists.
+
+Step 4. Rewrite the cover letter with formality = 7, using ONLY information from the resume. Write in NARRATIVE PARAGRAPH form with flowing sentences that tell a STORY, NOT bullet points, NOT lists, NOT numbered items, NOT resume-style accomplishment lists. Remove any claims not supported by the resume. Avoid subjective qualifiers like 'drastic' or 'transformational'. Use ONLY regular ASCII hyphens (-), NEVER em dashes, en dashes, or non-breaking hyphens. Write naturally, like a human wrote it, in paragraph form that tells a story. Keep within 250 words.
+
+Job Description: """ + job['job_description'] + """
+
+Resume:
+""" + resume + """
+
+Current Cover Letter Draft:
+""" + response + """
+
+Respond with the improved cover letter only, ensuring: (1) all information comes from the resume, (2) it sounds natural and human-written, (3) it's written in NARRATIVE PARAGRAPH form that tells a STORY (NOT bullet points, NOT lists, NOT numbered items, NOT resume-style), (4) ALL dashes are regular ASCII hyphens (-).""")
             refined = generate_cover_letter_with_ollama(user_prompt2, ollama_url, ollama_model)
             if refined:
                 response = refined
@@ -613,7 +781,47 @@ def get_CoverLetter(job_id):
         if response:
             update_cover_letter_status("Initial draft generated. Refining cover letter...", job_id, False)
             # Refinement step
-            user_prompt2 = ("CRITICAL: You must ONLY use information that is explicitly stated in the resume provided below. DO NOT make up, invent, or assume any skills, experiences, achievements, or qualifications that are not directly mentioned in the resume.\n\nYou are helping improve a cover letter. Review the draft below and improve it while ensuring EVERY claim is backed by information in the resume.\n\nStep 1. Set formality: 1 = conversational, current draft = 10. Target formality = 7.\n\nStep 2. Identify 3-5 improvements, ensuring all examples come from the resume.\n\nStep 3. Rewrite the cover letter with formality = 7, using ONLY information from the resume. Remove any claims not supported by the resume. Avoid subjective qualifiers like 'drastic' or 'transformational'. Keep within 250 words.\n\nJob Description: " + job['job_description'] + "\n\nResume:\n" + resume + "\n\nCurrent Cover Letter Draft:\n" + response + "\n\nRespond with the improved cover letter only, ensuring all information comes from the resume.")
+            user_prompt2 = ("""CRITICAL: You must ONLY use information that is explicitly stated in the resume provided below. DO NOT make up, invent, or assume any skills, experiences, achievements, or qualifications that are not directly mentioned in the resume.
+
+CRITICAL - COVER LETTER FORMAT: The cover letter MUST be in NARRATIVE PARAGRAPH form that tells a STORY, NOT bullet points:
+- If the draft has bullet points, lists, numbered items, or reads like a resume, convert ALL of it into flowing narrative paragraphs
+- Write in paragraph form with complete sentences that flow together and tell a story
+- Tell a story that connects experiences and shows progression, don't just list accomplishments
+- Each paragraph should be 4-6 sentences that weave together related experiences into a narrative
+- Make it read like a story about their career journey, not a resume listing achievements
+- Show how experiences connect and build on each other
+- Write like you're telling a story, not listing resume bullets
+
+IMPORTANT - REMOVE AI TELLS: Review the draft and make it sound natural and human:
+- Replace ALL em dashes (—), en dashes (–), and non-breaking hyphens (‑) with regular ASCII hyphens (-)
+- Fix percentage spacing: remove spaces before % signs (write 90% NOT 90 %)
+- Remove overly formal or AI-sounding phrases
+- Eliminate repetitive patterns
+- Make it sound like a real person wrote it, not AI
+- Use simple, direct language
+- Avoid excessive transition words
+- Vary sentence structure naturally
+- Don't start every sentence with 'I'
+
+You are helping improve a cover letter. Review the draft below and improve it while ensuring EVERY claim is backed by information in the resume.
+
+Step 1. Check if the draft is written as bullet points, lists, or reads like a resume. If so, convert ALL of it into narrative paragraphs that tell a story with flowing sentences.
+
+Step 2. Set formality: 1 = conversational, current draft = 10. Target formality = 7.
+
+Step 3. Identify 3-5 improvements, ensuring all examples come from the resume. Also identify and remove any AI tells (em dashes, non-breaking hyphens, overly formal language, repetitive patterns). Ensure it's written as narrative paragraphs that tell a story, NOT bullet points or resume-style lists.
+
+Step 4. Rewrite the cover letter with formality = 7, using ONLY information from the resume. Write in NARRATIVE PARAGRAPH form with flowing sentences that tell a STORY, NOT bullet points, NOT lists, NOT numbered items, NOT resume-style accomplishment lists. Remove any claims not supported by the resume. Avoid subjective qualifiers like 'drastic' or 'transformational'. Use ONLY regular ASCII hyphens (-), NEVER em dashes, en dashes, or non-breaking hyphens. Write naturally, like a human wrote it, in paragraph form that tells a story. Keep within 250 words.
+
+Job Description: """ + job['job_description'] + """
+
+Resume:
+""" + resume + """
+
+Current Cover Letter Draft:
+""" + response + """
+
+Respond with the improved cover letter only, ensuring: (1) all information comes from the resume, (2) it sounds natural and human-written, (3) it's written in NARRATIVE PARAGRAPH form that tells a STORY (NOT bullet points, NOT lists, NOT numbered items, NOT resume-style), (4) ALL dashes are regular ASCII hyphens (-).""")
             refined = generate_cover_letter_with_groq(user_prompt2, groq_key)
             if refined:
                 response = refined
@@ -633,7 +841,47 @@ def get_CoverLetter(job_id):
         if response:
             update_cover_letter_status("Initial draft generated. Refining cover letter...", job_id, False)
             # Refinement step
-            user_prompt2 = ("CRITICAL: You must ONLY use information that is explicitly stated in the resume provided below. DO NOT make up, invent, or assume any skills, experiences, achievements, or qualifications that are not directly mentioned in the resume.\n\nYou are helping improve a cover letter. Review the draft below and improve it while ensuring EVERY claim is backed by information in the resume.\n\nStep 1. Set formality: 1 = conversational, current draft = 10. Target formality = 7.\n\nStep 2. Identify 3-5 improvements, ensuring all examples come from the resume.\n\nStep 3. Rewrite the cover letter with formality = 7, using ONLY information from the resume. Remove any claims not supported by the resume. Avoid subjective qualifiers like 'drastic' or 'transformational'. Keep within 250 words.\n\nJob Description: " + job['job_description'] + "\n\nResume:\n" + resume + "\n\nCurrent Cover Letter Draft:\n" + response + "\n\nRespond with the improved cover letter only, ensuring all information comes from the resume.")
+            user_prompt2 = ("""CRITICAL: You must ONLY use information that is explicitly stated in the resume provided below. DO NOT make up, invent, or assume any skills, experiences, achievements, or qualifications that are not directly mentioned in the resume.
+
+CRITICAL - COVER LETTER FORMAT: The cover letter MUST be in NARRATIVE PARAGRAPH form that tells a STORY, NOT bullet points:
+- If the draft has bullet points, lists, numbered items, or reads like a resume, convert ALL of it into flowing narrative paragraphs
+- Write in paragraph form with complete sentences that flow together and tell a story
+- Tell a story that connects experiences and shows progression, don't just list accomplishments
+- Each paragraph should be 4-6 sentences that weave together related experiences into a narrative
+- Make it read like a story about their career journey, not a resume listing achievements
+- Show how experiences connect and build on each other
+- Write like you're telling a story, not listing resume bullets
+
+IMPORTANT - REMOVE AI TELLS: Review the draft and make it sound natural and human:
+- Replace ALL em dashes (—), en dashes (–), and non-breaking hyphens (‑) with regular ASCII hyphens (-)
+- Fix percentage spacing: remove spaces before % signs (write 90% NOT 90 %)
+- Remove overly formal or AI-sounding phrases
+- Eliminate repetitive patterns
+- Make it sound like a real person wrote it, not AI
+- Use simple, direct language
+- Avoid excessive transition words
+- Vary sentence structure naturally
+- Don't start every sentence with 'I'
+
+You are helping improve a cover letter. Review the draft below and improve it while ensuring EVERY claim is backed by information in the resume.
+
+Step 1. Check if the draft is written as bullet points, lists, or reads like a resume. If so, convert ALL of it into narrative paragraphs that tell a story with flowing sentences.
+
+Step 2. Set formality: 1 = conversational, current draft = 10. Target formality = 7.
+
+Step 3. Identify 3-5 improvements, ensuring all examples come from the resume. Also identify and remove any AI tells (em dashes, non-breaking hyphens, overly formal language, repetitive patterns). Ensure it's written as narrative paragraphs that tell a story, NOT bullet points or resume-style lists.
+
+Step 4. Rewrite the cover letter with formality = 7, using ONLY information from the resume. Write in NARRATIVE PARAGRAPH form with flowing sentences that tell a STORY, NOT bullet points, NOT lists, NOT numbered items, NOT resume-style accomplishment lists. Remove any claims not supported by the resume. Avoid subjective qualifiers like 'drastic' or 'transformational'. Use ONLY regular ASCII hyphens (-), NEVER em dashes, en dashes, or non-breaking hyphens. Write naturally, like a human wrote it, in paragraph form that tells a story. Keep within 250 words.
+
+Job Description: """ + job['job_description'] + """
+
+Resume:
+""" + resume + """
+
+Current Cover Letter Draft:
+""" + response + """
+
+Respond with the improved cover letter only, ensuring: (1) all information comes from the resume, (2) it sounds natural and human-written, (3) it's written in NARRATIVE PARAGRAPH form that tells a STORY (NOT bullet points, NOT lists, NOT numbered items, NOT resume-style), (4) ALL dashes are regular ASCII hyphens (-).""")
             refined = generate_cover_letter_with_openai(user_prompt2, openai_key, openai_model)
             if refined:
                 response = refined
@@ -655,6 +903,10 @@ def get_CoverLetter(job_id):
         update_cover_letter_status(f"Error: Failed to generate cover letter using {provider} provider", job_id, True)
         return jsonify({"error": f"Failed to generate cover letter using {provider} provider."}), 500
 
+    # Post-process to clean up any remaining issues
+    update_cover_letter_status("Cleaning up cover letter...", job_id, False)
+    response = post_process_cover_letter(response)
+
     update_cover_letter_status("Saving cover letter to database...", job_id, False)
     query = "UPDATE jobs SET cover_letter = ? WHERE id = ?"
     print(f'Executing query: {query} with job_id: {job_id} and cover letter: {response}')
@@ -664,6 +916,66 @@ def get_CoverLetter(job_id):
     
     update_cover_letter_status("Cover letter generated successfully!", job_id, True)
     return jsonify({"cover_letter": response}), 200
+
+def post_process_cover_letter(text):
+    """
+    Post-process cover letter to fix common issues:
+    - Remove all Unicode dash variants
+    - Fix percentage spacing (remove space before %)
+    - Convert bullet-point style to narrative
+    - Clean up formatting
+    """
+    if not text:
+        return text
+    
+    import re
+    
+    # Replace ALL Unicode dash/hyphen variants with regular hyphens
+    dash_replacements = {
+        '\u2011': '-',  # Non-breaking hyphen (‑)
+        '\u2012': '-',  # Figure dash (‒)
+        '\u2013': '-',  # En dash (–)
+        '\u2014': '-',  # Em dash (—)
+        '\u2015': '-',  # Horizontal bar (―)
+        '\u2212': '-',  # Minus sign (−)
+        '\uFE58': '-',  # Small em dash (﹘)
+        '\uFE63': '-',  # Small hyphen-minus (﹣)
+        '\uFF0D': '-',  # Full-width hyphen-minus (－)
+    }
+    
+    for unicode_char, replacement in dash_replacements.items():
+        text = text.replace(unicode_char, replacement)
+    
+    # Fix percentage spacing - remove space before % sign
+    # Matches patterns like "90 %", "75 %", etc. and converts to "90%", "75%"
+    text = re.sub(r'(\d+)\s+%', r'\1%', text)
+    
+    # Remove bullet points and convert to narrative
+    lines = text.split('\n')
+    cleaned_lines = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        
+        # Remove bullet point markers
+        if line.startswith('•') or line.startswith('-') or line.startswith('*') or line.startswith('·'):
+            line = line[1:].strip()
+        # Remove numbered lists
+        if line and line[0].isdigit() and ('.' in line[:3] or ')' in line[:3]):
+            # Remove number prefix
+            line = re.sub(r'^\d+[\.\)]\s*', '', line)
+        
+        if line:
+            cleaned_lines.append(line)
+    
+    # Join back into paragraphs
+    text = '\n\n'.join(cleaned_lines)
+    
+    # Remove excessive spacing
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    
+    return text
 
 def filter_jobs_by_config(jobs_list, config):
     """Apply config filters to jobs list (for existing jobs in database)"""

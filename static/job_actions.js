@@ -443,6 +443,16 @@ function downloadCoverLetterPDF() {
     window.open('/api/cover-letter/pdf/' + currentCoverLetterJobId, '_blank');
 }
 
+function downloadCoverLetterDOCX() {
+    if (!currentCoverLetterJobId) {
+        alert('No cover letter available to download');
+        return;
+    }
+    
+    // Open DOCX in new tab (which will trigger download)
+    window.open('/api/cover-letter/docx/' + currentCoverLetterJobId, '_blank');
+}
+
 function openLatexModal() {
     if (!currentCoverLetterJobId) {
         alert('No cover letter available');

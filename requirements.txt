@@ -9,3 +9,4 @@ openai
 pdfminer.six
 flask_cors
 reportlab
+python-docx
