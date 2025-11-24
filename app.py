@@ -625,12 +625,31 @@ def generate_cover_letter_pdf(job_id):
         }
     )
 
+@app.route('/api/ollama/models', methods=['GET'])
+def get_ollama_models():
+    """Fetch available Ollama models"""
+    try:
+        ollama_url = config.get("ollama_base_url", "http://localhost:11434")
+        response = requests.get(f"{ollama_url}/api/tags", timeout=5)
+        if response.status_code == 200:
+            models = [model['name'] for model in response.json().get('models', [])]
+            return jsonify({"models": models}), 200
+        else:
+            return jsonify({"error": "Failed to fetch models", "models": []}), 500
+    except Exception as e:
+        print(f"Error fetching Ollama models: {e}")
+        return jsonify({"error": str(e), "models": []}), 500
+
 @app.route('/get_CoverLetter/<int:job_id>', methods=['POST'])
 def get_CoverLetter(job_id):
-    global cover_letter_status
+    global cover_letter_status, config
     
     if cover_letter_status["running"]:
         return jsonify({"error": "Cover letter generation is already in progress"}), 400
+    
+    # Get model from request if provided (for Ollama)
+    request_data = request.get_json() or {}
+    selected_model = request_data.get('model', None)
     
     print("CoverLetter clicked!")
     update_cover_letter_status("Starting cover letter generation...", job_id, False)
@@ -659,6 +678,20 @@ def get_CoverLetter(job_id):
         return jsonify({"error": "Resume not found or couldn't be read."}), 400
 
     provider = config.get("cover_letter_provider", "template").lower()
+    
+    # Save selected model to config if provided (for Ollama)
+    if selected_model and provider == "ollama":
+        try:
+            with open('config.json', 'r') as f:
+                current_config = json.load(f)
+            current_config['ollama_model'] = selected_model
+            with open('config.json', 'w') as f:
+                json.dump(current_config, f, indent=4)
+            # Reload global config
+            config = load_config('config.json')
+            print(f"Saved Ollama model to config: {selected_model}")
+        except Exception as e:
+            print(f"Error saving model to config: {e}")
     consideration = ""
     
     update_cover_letter_status(f"Using {provider.upper()} provider to generate cover letter...", job_id, False)
@@ -714,7 +747,8 @@ Resume:
     # Try to generate cover letter based on provider
     if provider == "ollama":
         ollama_url = config.get("ollama_base_url", "http://localhost:11434")
-        ollama_model = config.get("ollama_model", "gpt-oss")
+        # Use selected model from request, or fall back to config, or default
+        ollama_model = selected_model or config.get("ollama_model", "gpt-oss")
         print(f"Using Ollama provider with model {ollama_model}")
         update_cover_letter_status(f"Generating initial draft with Ollama ({ollama_model})...", job_id, False)
         response = generate_cover_letter_with_ollama(user_prompt, ollama_url, ollama_model)

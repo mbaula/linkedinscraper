@@ -571,7 +571,12 @@
                 <div id="resizer"></div>
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #e8e8e8;">
                     <h2 style="margin: 0; color: #4CAF50; font-size: 1.5em;">Cover Letter</h2>
-                    <button class="job-button" id="generate-cover-letter-btn" onclick="generateCoverLetter()" style="display: none; background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);">Generate Cover Letter</button>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <select id="ollama-model-select" style="display: none; padding: 8px 12px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px; background-color: white;">
+                            <option value="">Loading models...</option>
+                        </select>
+                        <button class="job-button" id="generate-cover-letter-btn" onclick="generateCoverLetter()" style="display: none; background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);">Generate Cover Letter</button>
+                    </div>
                 </div>
                 <div id="bottom-pane">
                     <div id="cover-letter-pane">

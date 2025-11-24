@@ -569,6 +569,9 @@ function updateJobDetails(job) {
     // Update current job ID for cover letter generation
     currentCoverLetterJobId = job.id;
     
+    // Check provider and show/hide model selector
+    checkProviderAndLoadModels();
+    
     // Update cover letter display
     if (job.cover_letter) {
         updateCoverLetter(job.cover_letter);
@@ -581,6 +584,118 @@ function updateJobDetails(job) {
             generateBtn.style.display = 'inline-block';
             generateBtn.onclick = function() { generateCoverLetter(); };
         }
+    }
+}
+
+async function checkProviderAndLoadModels() {
+    try {
+        // Fetch config to check provider
+        const response = await fetch('/api/config');
+        const config = await response.json();
+        const provider = (config.cover_letter_provider || 'template').toLowerCase();
+        
+        var modelSelect = document.getElementById('ollama-model-select');
+        if (modelSelect) {
+            if (provider === 'ollama') {
+                modelSelect.style.display = 'block';
+                await loadOllamaModels();
+            } else {
+                modelSelect.style.display = 'none';
+            }
+        }
+    } catch (error) {
+        console.error('Error checking provider:', error);
+    }
+}
+
+async function loadOllamaModels() {
+    var modelSelect = document.getElementById('ollama-model-select');
+    if (!modelSelect) return;
+    
+    modelSelect.innerHTML = '<option value="">Loading models...</option>';
+    
+    try {
+        // Fetch models and config in parallel
+        const [modelsResponse, configResponse] = await Promise.all([
+            fetch('/api/ollama/models'),
+            fetch('/api/config')
+        ]);
+        
+        const modelsData = await modelsResponse.json();
+        const config = await configResponse.json();
+        
+        if (modelsData.models && modelsData.models.length > 0) {
+            modelSelect.innerHTML = '';
+            modelsData.models.forEach(function(model) {
+                var option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                modelSelect.appendChild(option);
+            });
+            
+            // Auto-select last used model from config
+            var defaultModel = config.ollama_model;
+            if (defaultModel) {
+                // Try to find and select the saved model
+                var found = false;
+                for (var i = 0; i < modelSelect.options.length; i++) {
+                    if (modelSelect.options[i].value === defaultModel) {
+                        modelSelect.value = defaultModel;
+                        found = true;
+                        break;
+                    }
+                }
+                // If saved model not in list, add it silently
+                if (!found && defaultModel) {
+                    var option = document.createElement('option');
+                    option.value = defaultModel;
+                    option.textContent = defaultModel;
+                    modelSelect.appendChild(option);
+                    modelSelect.value = defaultModel;
+                }
+            }
+            
+            // Save model to config when user changes selection
+            modelSelect.addEventListener('change', function() {
+                if (this.value) {
+                    saveOllamaModelToConfig(this.value);
+                }
+            });
+        } else {
+            modelSelect.innerHTML = '<option value="">No models available</option>';
+        }
+    } catch (error) {
+        console.error('Error loading Ollama models:', error);
+        modelSelect.innerHTML = '<option value="">Error loading models</option>';
+    }
+}
+
+async function saveOllamaModelToConfig(model) {
+    try {
+        // Get current config
+        const configResponse = await fetch('/api/config');
+        const config = await configResponse.json();
+        
+        // Update model
+        config.ollama_model = model;
+        
+        // Save to config
+        const saveResponse = await fetch('/api/config', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(config)
+        });
+        
+        const result = await saveResponse.json();
+        if (result.error) {
+            console.error('Error saving model to config:', result.error);
+        } else {
+            console.log('Model saved to config:', model);
+        }
+    } catch (error) {
+        console.error('Error saving model to config:', error);
     }
 }
 
@@ -693,8 +808,26 @@ function startCoverLetterGeneration(jobId) {
     }
     coverLetterStatusInterval = setInterval(checkCoverLetterStatus, 500);
     
+    // Get selected model if Ollama provider
+    var modelSelect = document.getElementById('ollama-model-select');
+    var selectedModel = null;
+    if (modelSelect && modelSelect.style.display !== 'none') {
+        selectedModel = modelSelect.value;
+    }
+    
     // Start the generation
-    fetch('/get_CoverLetter/' + jobId, { method: 'POST' })
+    var requestBody = {};
+    if (selectedModel) {
+        requestBody.model = selectedModel;
+    }
+    
+    fetch('/get_CoverLetter/' + jobId, { 
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: Object.keys(requestBody).length > 0 ? JSON.stringify(requestBody) : undefined
+    })
         .then(response => response.json())
         .then(data => {
             console.log(data);
