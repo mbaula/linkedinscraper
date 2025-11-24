@@ -242,12 +242,25 @@ def generate_cover_letter_with_ollama(prompt, base_url, model):
             "prompt": prompt,
             "stream": False
         }
-        response = requests.post(url, json=payload, timeout=120)
+        print(f"Calling Ollama API: {url} with model: {model}")
+        response = requests.post(url, json=payload, timeout=180)
         if response.status_code == 200:
-            return response.json().get("response", "")
+            result = response.json()
+            if "response" in result:
+                return result.get("response", "")
+            else:
+                print(f"Ollama response missing 'response' field: {result}")
+                return None
         else:
-            print(f"Ollama API error: {response.status_code} - {response.text}")
+            error_msg = f"Ollama API error: {response.status_code} - {response.text}"
+            print(error_msg)
+            # If model not found, suggest pulling it
+            if response.status_code == 404:
+                print(f"Model '{model}' not found. Try running: ollama pull {model}")
             return None
+    except requests.exceptions.ConnectionError as e:
+        print(f"Error connecting to Ollama at {base_url}. Make sure Ollama is running.")
+        return None
     except Exception as e:
         print(f"Error connecting to Ollama: {e}")
         return None
@@ -348,6 +361,107 @@ def get_cover_letter_status():
     """Get current cover letter generation status"""
     return jsonify(cover_letter_status)
 
+def format_cover_letter_for_latex(cover_letter_text):
+    """
+    Format cover letter text for LaTeX insertion.
+    Extracts body paragraphs and formats them with \noindent and \vspace{1em}
+    """
+    if not cover_letter_text:
+        return ""
+    
+    # Split into paragraphs (double newlines)
+    paragraphs = cover_letter_text.split('\n\n')
+    
+    # Filter out empty paragraphs and common headers/footers
+    body_paragraphs = []
+    skip_patterns = [
+        r'^Dear\s+',
+        r'^Sincerely',
+        r'^Best regards',
+        r'^Regards',
+        r'^Thank you for considering',
+        r'^I look forward to',
+        r'^Please feel free to contact',
+        r'^Mark Baula$',
+        r'^[A-Z][a-z]+\s+[A-Z][a-z]+$',  # Name signatures
+    ]
+    
+    import re
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+        
+        # Skip if it matches a header/footer pattern
+        should_skip = False
+        for pattern in skip_patterns:
+            if re.match(pattern, para, re.IGNORECASE):
+                should_skip = True
+                break
+        
+        if not should_skip and len(para) > 20:  # Only include substantial paragraphs
+            # Escape LaTeX special characters
+            para = para.replace('\\', '\\textbackslash{}')
+            para = para.replace('&', '\\&')
+            para = para.replace('%', '\\%')
+            para = para.replace('$', '\\$')
+            para = para.replace('#', '\\#')
+            para = para.replace('^', '\\textasciicircum{}')
+            para = para.replace('_', '\\_')
+            para = para.replace('{', '\\{')
+            para = para.replace('}', '\\}')
+            para = para.replace('~', '\\textasciitilde{}')
+            
+            body_paragraphs.append(para)
+    
+    # Format for LaTeX
+    latex_formatted = ""
+    for para in body_paragraphs:
+        latex_formatted += f"\\noindent {para} \\vspace{{1em}}\n\n"
+    
+    return latex_formatted.strip()
+
+@app.route('/api/cover-letter/latex/<int:job_id>', methods=['GET'])
+def get_cover_letter_latex(job_id):
+    """Get LaTeX-formatted cover letter body for insertion into LaTeX document"""
+    conn = sqlite3.connect(config["db_path"])
+    cursor = conn.cursor()
+    cursor.execute("SELECT cover_letter FROM jobs WHERE id = ?", (job_id,))
+    result = cursor.fetchone()
+    conn.close()
+    
+    if not result or not result[0]:
+        return jsonify({"error": "Cover letter not found"}), 404
+    
+    cover_letter_text = result[0]
+    latex_formatted = format_cover_letter_for_latex(cover_letter_text)
+    
+    return jsonify({"latex": latex_formatted, "full_text": cover_letter_text})
+
+def escape_xml_text(text):
+    """
+    Escape special characters for XML/HTML (used by ReportLab Paragraph).
+    Handles dashes, quotes, and other special characters properly.
+    ReportLab's Paragraph uses XML/HTML markup, so we need to escape properly.
+    """
+    if not text:
+        return ""
+    
+    # First, handle dashes - convert Unicode dashes to HTML entities or regular hyphens
+    # Em dash (—) U+2014 -> HTML entity or regular hyphen
+    text = text.replace('—', '-')  # Em dash to regular hyphen
+    text = text.replace('–', '-')  # En dash to regular hyphen
+    # Keep regular hyphens (-) as is
+    
+    # Escape XML/HTML special characters (must escape & first!)
+    text = text.replace('&', '&amp;')
+    text = text.replace('<', '&lt;')
+    text = text.replace('>', '&gt;')
+    text = text.replace('"', '&quot;')
+    text = text.replace("'", '&apos;')
+    
+    return text
+
 @app.route('/api/cover-letter/pdf/<int:job_id>', methods=['GET'])
 def generate_cover_letter_pdf(job_id):
     """Generate PDF of cover letter"""
@@ -384,6 +498,16 @@ def generate_cover_letter_pdf(job_id):
         alignment=TA_LEFT
     )
     
+    # Normal style with better line spacing
+    normal_style = ParagraphStyle(
+        'CoverLetterNormal',
+        parent=styles['Normal'],
+        fontSize=11,
+        leading=14,
+        alignment=TA_LEFT,
+        spaceAfter=12
+    )
+    
     # Add cover letter content
     # Split by paragraphs and create Paragraph objects
     paragraphs = cover_letter_text.split('\n\n')
@@ -392,9 +516,11 @@ def generate_cover_letter_pdf(job_id):
             # Replace newlines within paragraphs with spaces
             para_clean = para.replace('\n', ' ').strip()
             if para_clean:
-                p = Paragraph(para_clean, styles['Normal'])
+                # Escape XML/HTML special characters including dashes
+                para_escaped = escape_xml_text(para_clean)
+                p = Paragraph(para_escaped, normal_style)
                 elements.append(p)
-                elements.append(Spacer(1, 12))
+                elements.append(Spacer(1, 6))
     
     # Build PDF
     doc.build(elements)
@@ -460,7 +586,7 @@ def get_CoverLetter(job_id):
     # Try to generate cover letter based on provider
     if provider == "ollama":
         ollama_url = config.get("ollama_base_url", "http://localhost:11434")
-        ollama_model = config.get("ollama_model", "llama3.2")
+        ollama_model = config.get("ollama_model", "gpt-oss")
         print(f"Using Ollama provider with model {ollama_model}")
         update_cover_letter_status(f"Generating initial draft with Ollama ({ollama_model})...", job_id, False)
         response = generate_cover_letter_with_ollama(user_prompt, ollama_url, ollama_model)

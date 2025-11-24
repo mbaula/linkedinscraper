@@ -443,11 +443,95 @@ function downloadCoverLetterPDF() {
     window.open('/api/cover-letter/pdf/' + currentCoverLetterJobId, '_blank');
 }
 
+function openLatexModal() {
+    if (!currentCoverLetterJobId) {
+        alert('No cover letter available');
+        return;
+    }
+    
+    var modal = document.getElementById('latex-modal');
+    var textarea = document.getElementById('latex-textarea');
+    var copySuccess = document.getElementById('copy-success');
+    
+    if (!modal || !textarea) return;
+    
+    // Hide success message
+    if (copySuccess) copySuccess.style.display = 'none';
+    
+    // Fetch LaTeX formatted text
+    fetch('/api/cover-letter/latex/' + currentCoverLetterJobId)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert('Error: ' + data.error);
+                return;
+            }
+            
+            // Set the LaTeX code in the textarea
+            textarea.value = data.latex;
+            
+            // Show modal
+            modal.style.display = 'block';
+            document.body.style.overflow = 'hidden';
+            
+            // Select all text for easy copying
+            textarea.select();
+        })
+        .catch(error => {
+            console.error('Error loading LaTeX:', error);
+            alert('Error loading LaTeX code');
+        });
+}
+
+function closeLatexModal() {
+    var modal = document.getElementById('latex-modal');
+    if (modal) {
+        modal.style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+}
+
+function copyLatexToClipboard() {
+    var textarea = document.getElementById('latex-textarea');
+    var copySuccess = document.getElementById('copy-success');
+    
+    if (!textarea) return;
+    
+    // Select and copy
+    textarea.select();
+    textarea.setSelectionRange(0, 99999); // For mobile devices
+    
+    try {
+        document.execCommand('copy');
+        
+        // Show success message
+        if (copySuccess) {
+            copySuccess.style.display = 'block';
+            setTimeout(function() {
+                copySuccess.style.display = 'none';
+            }, 2000);
+        }
+        
+        // Visual feedback
+        textarea.style.backgroundColor = '#d4edda';
+        setTimeout(function() {
+            textarea.style.backgroundColor = '#f9f9f9';
+        }, 300);
+    } catch (err) {
+        console.error('Failed to copy:', err);
+        alert('Failed to copy. Please select and copy manually.');
+    }
+}
+
 // Close modal when clicking outside of it
 window.onclick = function(event) {
     var modal = document.getElementById('cover-letter-modal');
+    var latexModal = document.getElementById('latex-modal');
     if (event.target == modal) {
         closeCoverLetterFullscreen();
+    }
+    if (event.target == latexModal) {
+        closeLatexModal();
     }
 }
 

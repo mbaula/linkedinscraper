@@ -236,49 +236,74 @@
                 overflow-y: auto;
                 flex-grow: 1;
                 height: calc(30% - 5px); /* Height of the bottom pane */
+                background-color: #f5f5f5;
+                padding: 15px;
+                border-radius: 8px;
             }
             .cover-letter-container {
-                background-color: #ffffff;
-                padding: 25px;
-                border-radius: 8px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                background: linear-gradient(to bottom, #ffffff 0%, #fafafa 100%);
+                padding: 0;
+                border-radius: 12px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08);
                 font-family: 'Georgia', 'Times New Roman', serif;
                 line-height: 1.8;
-                color: #333;
-                max-width: 800px;
+                color: #2c3e50;
+                max-width: 850px;
                 margin: 0 auto;
                 overflow-y: auto;
                 max-height: 100%;
                 word-wrap: break-word;
                 overflow-wrap: break-word;
+                position: relative;
+                border: 1px solid #e8e8e8;
             }
             .cover-letter-content {
                 white-space: pre-wrap;
-                font-size: 15px;
+                font-size: 16px;
                 text-align: left;
                 word-wrap: break-word;
                 overflow-wrap: break-word;
+                padding: 35px 40px;
+                padding-bottom: 90px; /* Space for fixed buttons */
+                background-color: #ffffff;
+                border-radius: 0 0 12px 12px;
             }
             .cover-letter-actions {
                 display: flex;
-                gap: 10px;
+                gap: 12px;
                 justify-content: center;
-                margin-top: 15px;
-                margin-bottom: 15px;
+                align-items: center;
+                position: sticky;
+                top: 0;
+                background: linear-gradient(to bottom, #ffffff 0%, #f8f9fa 100%);
+                padding: 15px 20px;
+                z-index: 10;
+                border-bottom: 2px solid #e8e8e8;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+                border-radius: 12px 12px 0 0;
+                margin: 0;
             }
             .cover-letter-action-btn {
-                background-color: #4CAF50;
+                background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
                 color: white;
-                padding: 8px 16px;
+                padding: 10px 20px;
                 border: none;
-                border-radius: 5px;
+                border-radius: 8px;
                 cursor: pointer;
                 font-size: 14px;
-                font-weight: bold;
-                transition: background-color 0.3s;
+                font-weight: 600;
+                transition: all 0.3s ease;
+                box-shadow: 0 2px 6px rgba(76, 175, 80, 0.3);
+                letter-spacing: 0.3px;
             }
             .cover-letter-action-btn:hover {
-                background-color: #45a049;
+                background: linear-gradient(135deg, #45a049 0%, #3d8b40 100%);
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+            }
+            .cover-letter-action-btn:active {
+                transform: translateY(0);
+                box-shadow: 0 2px 6px rgba(76, 175, 80, 0.3);
             }
             .cover-letter-modal {
                 display: none;
@@ -320,10 +345,90 @@
             .cover-letter-modal-close:hover {
                 color: #000;
             }
+            .latex-modal-content {
+                background-color: #fefefe;
+                margin: 2% auto;
+                padding: 30px;
+                border: 1px solid #888;
+                border-radius: 10px;
+                width: 90%;
+                max-width: 900px;
+                max-height: 90vh;
+                overflow-y: auto;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            }
+            .latex-textarea {
+                width: 100%;
+                min-height: 400px;
+                font-family: 'Courier New', monospace;
+                font-size: 13px;
+                padding: 15px;
+                border: 2px solid #ddd;
+                border-radius: 5px;
+                resize: vertical;
+                box-sizing: border-box;
+                background-color: #f9f9f9;
+                white-space: pre-wrap;
+                word-wrap: break-word;
+            }
+            .latex-instructions {
+                background-color: #e8f5e9;
+                padding: 15px;
+                border-radius: 5px;
+                margin-bottom: 15px;
+                border-left: 4px solid #4CAF50;
+            }
+            .latex-instructions h3 {
+                margin-top: 0;
+                color: #4CAF50;
+            }
+            .latex-instructions ol {
+                margin-bottom: 0;
+            }
+            .copy-button {
+                background-color: #4CAF50;
+                color: white;
+                padding: 10px 20px;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 14px;
+                font-weight: bold;
+                margin-top: 10px;
+                transition: background-color 0.3s;
+            }
+            .copy-button:hover {
+                background-color: #45a049;
+            }
+            .copy-button:active {
+                background-color: #3d8b40;
+            }
+            .copy-success {
+                display: none;
+                color: #4CAF50;
+                font-weight: bold;
+                margin-top: 10px;
+            }
             .cover-letter-loading {
                 text-align: center;
                 padding: 40px;
                 color: #4CAF50;
+            }
+            .cover-letter-placeholder {
+                text-align: center;
+                padding: 60px 40px;
+                color: #999;
+                background-color: #ffffff;
+                border-radius: 12px;
+                border: 2px dashed #e0e0e0;
+                font-size: 15px;
+                line-height: 1.6;
+            }
+            .cover-letter-placeholder::before {
+                content: "📄";
+                display: block;
+                font-size: 48px;
+                margin-bottom: 15px;
             }
             .cover-letter-status {
                 background-color: #f0f7ff;
@@ -464,21 +569,22 @@
                     <!-- Job details will be inserted here -->
                 </div>
                 <div id="resizer"></div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <h2 style="margin: 0;">Cover Letter</h2>
-                    <button class="job-button" id="generate-cover-letter-btn" onclick="generateCoverLetter()" style="display: none;">Generate Cover Letter</button>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #e8e8e8;">
+                    <h2 style="margin: 0; color: #4CAF50; font-size: 1.5em;">Cover Letter</h2>
+                    <button class="job-button" id="generate-cover-letter-btn" onclick="generateCoverLetter()" style="display: none; background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);">Generate Cover Letter</button>
                 </div>
                 <div id="bottom-pane">
                     <div id="cover-letter-pane">
                         <div class="cover-letter-container" style="display: none;" id="cover-letter-display">
-                            <div class="cover-letter-content" id="cover-letter-content"></div>
                             <div class="cover-letter-actions" id="cover-letter-actions" style="display: none;">
                                 <button class="cover-letter-action-btn" onclick="openCoverLetterFullscreen()">Fullscreen</button>
+                                <button class="cover-letter-action-btn" onclick="openLatexModal()">Copy LaTeX</button>
                                 <button class="cover-letter-action-btn" onclick="downloadCoverLetterPDF()">Download PDF</button>
                             </div>
+                            <div class="cover-letter-content" id="cover-letter-content"></div>
                         </div>
                         <div id="cover-letter-status" style="display: none;"></div>
-                        <div id="cover-letter-placeholder" style="text-align: center; padding: 40px; color: #999;">
+                        <div id="cover-letter-placeholder" class="cover-letter-placeholder">
                             No cover letter generated yet. Click "Cover Letter" button above to generate one.
                         </div>
                     </div>
@@ -493,8 +599,35 @@
                         </div>
                         <div class="cover-letter-content" id="cover-letter-modal-content"></div>
                         <div class="cover-letter-actions" style="margin-top: 20px;">
+                            <button class="cover-letter-action-btn" onclick="openLatexModal()">Copy LaTeX</button>
                             <button class="cover-letter-action-btn" onclick="downloadCoverLetterPDF()">Download PDF</button>
                             <button class="cover-letter-action-btn" onclick="closeCoverLetterFullscreen()">Close</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- LaTeX Copy Modal -->
+                <div id="latex-modal" class="cover-letter-modal" style="display: none;">
+                    <div class="latex-modal-content">
+                        <div class="cover-letter-modal-header">
+                            <h2 style="margin: 0; color: #4CAF50;">Copy LaTeX Code</h2>
+                            <span class="cover-letter-modal-close" onclick="closeLatexModal()">&times;</span>
+                        </div>
+                        <div class="latex-instructions">
+                            <h3>How to use:</h3>
+                            <ol>
+                                <li>Copy the LaTeX code below</li>
+                                <li>Open your Overleaf document</li>
+                                <li>Find the cover letter body section (after the salutation)</li>
+                                <li>Replace the existing body paragraphs with the copied code</li>
+                                <li>The code is formatted with <code>\noindent</code> and <code>\vspace{1em}</code> for proper spacing</li>
+                            </ol>
+                        </div>
+                        <textarea id="latex-textarea" class="latex-textarea" readonly></textarea>
+                        <button class="copy-button" onclick="copyLatexToClipboard()">Copy to Clipboard</button>
+                        <div class="copy-success" id="copy-success">✓ Copied to clipboard!</div>
+                        <div class="cover-letter-actions" style="margin-top: 20px;">
+                            <button class="cover-letter-action-btn" onclick="closeLatexModal()">Close</button>
                         </div>
                     </div>
                 </div>
