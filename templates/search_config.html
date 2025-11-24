@@ -254,6 +254,52 @@
                 </div>
             </div>
 
+            <!-- Cover Letter Settings -->
+            <div class="section">
+                <h2>Cover Letter Generation</h2>
+                
+                <div class="form-group">
+                    <label>Cover Letter Provider</label>
+                    <select id="cover_letter_provider" style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 5px; font-size: 14px; box-sizing: border-box;">
+                        <option value="template">Template-based (Free, No API needed)</option>
+                        <option value="ollama">Ollama (Free, Local LLM)</option>
+                        <option value="groq">Groq (Free API tier)</option>
+                        <option value="openai">OpenAI (Paid)</option>
+                    </select>
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        <strong>Template:</strong> Simple template-based generation, no setup required.<br>
+                        <strong>Ollama:</strong> Free local LLM. Install from <a href="https://ollama.ai" target="_blank">ollama.ai</a> and run: <code>ollama pull llama3.2</code><br>
+                        <strong>Groq:</strong> Free API. Get key from <a href="https://console.groq.com" target="_blank">console.groq.com</a><br>
+                        <strong>OpenAI:</strong> Requires paid API key
+                    </small>
+                </div>
+
+                <div class="form-group" id="ollama-settings" style="display: none;">
+                    <label>Ollama Base URL</label>
+                    <input type="text" id="ollama_base_url" placeholder="http://localhost:11434" value="http://localhost:11434">
+                    <label style="margin-top: 10px;">Ollama Model</label>
+                    <input type="text" id="ollama_model" placeholder="llama3.2" value="llama3.2">
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        Popular models: llama3.2, mistral, llama3.1-8b. Run <code>ollama list</code> to see installed models.
+                    </small>
+                </div>
+
+                <div class="form-group" id="groq-settings" style="display: none;">
+                    <label>Groq API Key</label>
+                    <input type="text" id="groq_api_key" placeholder="Enter your Groq API key">
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        Get a free API key from <a href="https://console.groq.com" target="_blank">console.groq.com</a> (free tier available)
+                    </small>
+                </div>
+
+                <div class="form-group" id="openai-settings" style="display: none;">
+                    <label>OpenAI API Key</label>
+                    <input type="text" id="openai_api_key_cover" placeholder="Enter your OpenAI API key">
+                    <label style="margin-top: 10px;">OpenAI Model</label>
+                    <input type="text" id="openai_model_cover" placeholder="gpt-3.5-turbo" value="gpt-3.5-turbo">
+                </div>
+            </div>
+
             <!-- Scraping Settings -->
             <div class="section">
                 <h2>Scraping Settings</h2>
@@ -312,7 +358,28 @@
             checkSearchStatus();
             // Poll search status every 2 seconds if search is running
             setInterval(checkSearchStatus, 2000);
+            
+            // Setup cover letter provider change handler
+            document.getElementById('cover_letter_provider').addEventListener('change', function() {
+                updateCoverLetterProviderUI(this.value);
+            });
         });
+
+        function updateCoverLetterProviderUI(provider) {
+            // Hide all provider-specific settings
+            document.getElementById('ollama-settings').style.display = 'none';
+            document.getElementById('groq-settings').style.display = 'none';
+            document.getElementById('openai-settings').style.display = 'none';
+            
+            // Show relevant settings based on provider
+            if (provider === 'ollama') {
+                document.getElementById('ollama-settings').style.display = 'block';
+            } else if (provider === 'groq') {
+                document.getElementById('groq-settings').style.display = 'block';
+            } else if (provider === 'openai') {
+                document.getElementById('openai-settings').style.display = 'block';
+            }
+        }
 
         function loadConfig() {
             fetch('/api/config')
@@ -346,6 +413,16 @@
             // Populate text areas
             document.getElementById('desc_words').value = (config.desc_words || []).join('\n');
             document.getElementById('languages').value = (config.languages || []).join(', ');
+
+            // Populate cover letter settings
+            const coverLetterProvider = config.cover_letter_provider || 'template';
+            document.getElementById('cover_letter_provider').value = coverLetterProvider;
+            updateCoverLetterProviderUI(coverLetterProvider);
+            document.getElementById('ollama_base_url').value = config.ollama_base_url || 'http://localhost:11434';
+            document.getElementById('ollama_model').value = config.ollama_model || 'llama3.2';
+            document.getElementById('groq_api_key').value = config.groq_api_key || '';
+            document.getElementById('openai_api_key_cover').value = config.OpenAI_API_KEY || '';
+            document.getElementById('openai_model_cover').value = config.OpenAI_Model || 'gpt-3.5-turbo';
 
             // Populate scraping settings
             document.getElementById('pages_to_scrape').value = config.pages_to_scrape || 10;
@@ -456,8 +533,18 @@
                 rounds: parseInt(document.getElementById('rounds').value),
                 days_to_scrape: parseInt(document.getElementById('days_to_scrape').value),
                 timespan: document.getElementById('timespan').value,
-                delete_unapplied_jobs_after_days: parseInt(document.getElementById('delete_unapplied_jobs_after_days').value) || 0
+                delete_unapplied_jobs_after_days: parseInt(document.getElementById('delete_unapplied_jobs_after_days').value) || 0,
+                cover_letter_provider: document.getElementById('cover_letter_provider').value,
+                ollama_base_url: document.getElementById('ollama_base_url').value,
+                ollama_model: document.getElementById('ollama_model').value,
+                groq_api_key: document.getElementById('groq_api_key').value
             };
+            
+            // Only update OpenAI settings if using OpenAI provider
+            if (config.cover_letter_provider === 'openai') {
+                config.OpenAI_API_KEY = document.getElementById('openai_api_key_cover').value;
+                config.OpenAI_Model = document.getElementById('openai_model_cover').value;
+            }
 
             fetch('/api/config', {
                 method: 'POST',

@@ -393,15 +393,61 @@ async function showJobDetails(jobId) {
 
 
 function updateCoverLetter(coverLetter) {
-    var coverLetterPane = document.getElementById('cover-letter-pane');
-    // Check if the coverLetterPane exists
-    if (coverLetterPane) {
-        // Check if cover letter exists
-        if (coverLetter === null) {
-            coverLetterPane.innerText = 'No cover letter exists for this job.';
-        } else {
-            coverLetterPane.innerText = coverLetter;
-        }
+    var coverLetterDisplay = document.getElementById('cover-letter-display');
+    var coverLetterContent = document.getElementById('cover-letter-content');
+    var coverLetterActions = document.getElementById('cover-letter-actions');
+    var coverLetterPlaceholder = document.getElementById('cover-letter-placeholder');
+    var generateBtn = document.getElementById('generate-cover-letter-btn');
+    
+    if (coverLetter === null || !coverLetter) {
+        if (coverLetterDisplay) coverLetterDisplay.style.display = 'none';
+        if (coverLetterActions) coverLetterActions.style.display = 'none';
+        if (coverLetterPlaceholder) coverLetterPlaceholder.style.display = 'block';
+        if (generateBtn) generateBtn.style.display = 'inline-block';
+    } else {
+        if (coverLetterDisplay) coverLetterDisplay.style.display = 'block';
+        if (coverLetterContent) coverLetterContent.textContent = coverLetter;
+        if (coverLetterActions) coverLetterActions.style.display = 'flex';
+        if (coverLetterPlaceholder) coverLetterPlaceholder.style.display = 'none';
+        if (generateBtn) generateBtn.style.display = 'none';
+    }
+}
+
+function openCoverLetterFullscreen() {
+    var modal = document.getElementById('cover-letter-modal');
+    var modalContent = document.getElementById('cover-letter-modal-content');
+    var coverLetterContent = document.getElementById('cover-letter-content');
+    
+    if (modal && modalContent && coverLetterContent) {
+        modalContent.textContent = coverLetterContent.textContent;
+        modal.style.display = 'block';
+        document.body.style.overflow = 'hidden'; // Prevent background scrolling
+    }
+}
+
+function closeCoverLetterFullscreen() {
+    var modal = document.getElementById('cover-letter-modal');
+    if (modal) {
+        modal.style.display = 'none';
+        document.body.style.overflow = 'auto'; // Restore scrolling
+    }
+}
+
+function downloadCoverLetterPDF() {
+    if (!currentCoverLetterJobId) {
+        alert('No cover letter available to download');
+        return;
+    }
+    
+    // Open PDF in new tab (which will trigger download)
+    window.open('/api/cover-letter/pdf/' + currentCoverLetterJobId, '_blank');
+}
+
+// Close modal when clicking outside of it
+window.onclick = function(event) {
+    var modal = document.getElementById('cover-letter-modal');
+    if (event.target == modal) {
+        closeCoverLetterFullscreen();
     }
 }
 
@@ -425,12 +471,22 @@ function updateJobDetails(job) {
     html += '<p class="job-description">' + job.job_description + '</p>';
 
     jobDetailsDiv.innerHTML = html;
+    
+    // Update current job ID for cover letter generation
+    currentCoverLetterJobId = job.id;
+    
+    // Update cover letter display
     if (job.cover_letter) {
-        // Update the cover letter div
-        coverLetterDiv.innerHTML = '<p class="job-description">' + job.cover_letter + '</p>';
+        updateCoverLetter(job.cover_letter);
+        var generateBtn = document.getElementById('generate-cover-letter-btn');
+        if (generateBtn) generateBtn.style.display = 'none';
     } else {
-        // Clear the cover letter div if no cover letter exists
-        coverLetterDiv.innerHTML = '';
+        updateCoverLetter(null);
+        var generateBtn = document.getElementById('generate-cover-letter-btn');
+        if (generateBtn) {
+            generateBtn.style.display = 'inline-block';
+            generateBtn.onclick = function() { generateCoverLetter(); };
+        }
     }
 }
 
@@ -509,17 +565,109 @@ document.addEventListener('visibilitychange', function() {
     }
 });
 
-function markAsCoverLetter(jobId) {
-    console.log('Marking job as cover letter: ' + jobId)
+var currentCoverLetterJobId = null;
+var coverLetterStatusInterval = null;
+
+function generateCoverLetter() {
+    if (currentCoverLetterJobId) {
+        startCoverLetterGeneration(currentCoverLetterJobId);
+    }
+}
+
+function startCoverLetterGeneration(jobId) {
+    currentCoverLetterJobId = jobId;
+    
+    // Show loading state
+    var statusDiv = document.getElementById('cover-letter-status');
+    var displayDiv = document.getElementById('cover-letter-display');
+    var placeholderDiv = document.getElementById('cover-letter-placeholder');
+    var generateBtn = document.getElementById('generate-cover-letter-btn');
+    
+    if (statusDiv) {
+        statusDiv.style.display = 'block';
+        statusDiv.className = 'cover-letter-status';
+        statusDiv.innerHTML = '<span class="loading-spinner"></span>Starting cover letter generation...';
+    }
+    if (displayDiv) displayDiv.style.display = 'none';
+    if (placeholderDiv) placeholderDiv.style.display = 'none';
+    if (generateBtn) generateBtn.disabled = true;
+    if (generateBtn) generateBtn.innerHTML = 'Generating...';
+    
+    // Start polling for status
+    if (coverLetterStatusInterval) {
+        clearInterval(coverLetterStatusInterval);
+    }
+    coverLetterStatusInterval = setInterval(checkCoverLetterStatus, 500);
+    
+    // Start the generation
     fetch('/get_CoverLetter/' + jobId, { method: 'POST' })
         .then(response => response.json())
         .then(data => {
-            console.log(data);  // Log the response
+            console.log(data);
             if (data.cover_letter) {
-                // Show the job details again, this will also update the cover letter
+                // Stop polling
+                if (coverLetterStatusInterval) {
+                    clearInterval(coverLetterStatusInterval);
+                    coverLetterStatusInterval = null;
+                }
+                
+                // Hide status, show cover letter
+                if (statusDiv) statusDiv.style.display = 'none';
+                updateCoverLetter(data.cover_letter);
+                
+                // Refresh job details to show updated cover letter
                 showJobDetails(jobId);
+            } else if (data.error) {
+                // Show error
+                if (statusDiv) {
+                    statusDiv.className = 'cover-letter-error';
+                    statusDiv.innerHTML = '[ERROR] ' + data.error;
+                }
+                if (generateBtn) generateBtn.disabled = false;
+                if (generateBtn) generateBtn.innerHTML = 'Generate Cover Letter';
+            }
+        })
+        .catch(error => {
+            console.error('Error generating cover letter:', error);
+            if (statusDiv) {
+                statusDiv.className = 'cover-letter-error';
+                statusDiv.innerHTML = '[ERROR] Failed to generate cover letter: ' + error.message;
+            }
+            if (generateBtn) generateBtn.disabled = false;
+            if (generateBtn) generateBtn.innerHTML = 'Generate Cover Letter';
+            if (coverLetterStatusInterval) {
+                clearInterval(coverLetterStatusInterval);
+                coverLetterStatusInterval = null;
             }
         });
+}
+
+function checkCoverLetterStatus() {
+    fetch('/api/cover-letter/status')
+        .then(response => response.json())
+        .then(data => {
+            var statusDiv = document.getElementById('cover-letter-status');
+            if (statusDiv && data.running) {
+                statusDiv.style.display = 'block';
+                statusDiv.className = 'cover-letter-status';
+                statusDiv.innerHTML = '<span class="loading-spinner"></span>' + (data.message || 'Generating cover letter...');
+            } else if (statusDiv && data.completed) {
+                // Status will be handled by the main fetch response
+                if (coverLetterStatusInterval) {
+                    clearInterval(coverLetterStatusInterval);
+                    coverLetterStatusInterval = null;
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error checking cover letter status:', error);
+        });
+}
+
+function markAsCoverLetter(jobId) {
+    console.log('Generating cover letter for job: ' + jobId);
+    currentCoverLetterJobId = jobId;
+    startCoverLetterGeneration(jobId);
 }
 
 function markAsRejected(jobId) {

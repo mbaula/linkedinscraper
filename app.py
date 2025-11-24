@@ -11,6 +11,14 @@ import os
 import sys
 import csv
 import io
+import requests
+import re
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.enums import TA_LEFT
+from datetime import datetime
 
 def load_config(file_name):
     # Load the config file
@@ -225,64 +233,310 @@ def get_resume(job_id):
     conn.close()
     return jsonify({"resume": response}), 200
 
-@app.route('/get_CoverLetter/<int:job_id>', methods=['POST'])
-def get_CoverLetter(job_id):
-    print("CoverLetter clicked!")
+def generate_cover_letter_with_ollama(prompt, base_url, model):
+    """Generate cover letter using Ollama (free, local LLM)"""
+    try:
+        url = f"{base_url}/api/generate"
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False
+        }
+        response = requests.post(url, json=payload, timeout=120)
+        if response.status_code == 200:
+            return response.json().get("response", "")
+        else:
+            print(f"Ollama API error: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        print(f"Error connecting to Ollama: {e}")
+        return None
+
+def generate_cover_letter_with_groq(prompt, api_key):
+    """Generate cover letter using Groq (free API tier)"""
+    try:
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "llama-3.1-8b-instant",  # Free, fast model
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.7,
+            "max_tokens": 1000
+        }
+        response = requests.post(url, json=payload, headers=headers, timeout=60)
+        if response.status_code == 200:
+            return response.json()["choices"][0]["message"]["content"]
+        else:
+            print(f"Groq API error: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        print(f"Error connecting to Groq: {e}")
+        return None
+
+def generate_cover_letter_with_template(job_description, job_title, company, resume):
+    """Generate cover letter using template-based approach (no API needed)"""
+    # Extract key skills from job description
+    skills_keywords = ["python", "javascript", "react", "aws", "docker", "kubernetes", 
+                      "sql", "api", "backend", "frontend", "devops", "cloud", "ml", 
+                      "machine learning", "data", "database", "agile", "scrum"]
+    
+    found_skills = []
+    job_desc_lower = job_description.lower()
+    for skill in skills_keywords:
+        if skill in job_desc_lower:
+            found_skills.append(skill.title())
+    
+    # Extract experience from resume (simple keyword matching)
+    experience_keywords = ["experience", "worked", "developed", "implemented", "designed", "built"]
+    resume_sentences = resume.split('.')[:5]  # Get first few sentences
+    
+    # Generate template-based cover letter
+    cover_letter = f"""Dear Hiring Manager,
+
+I am writing to express my strong interest in the {job_title} position at {company}. 
+
+"""
+    
+    if found_skills:
+        cover_letter += f"With experience in {', '.join(found_skills[:5])}, I am excited about the opportunity to contribute to your team.\n\n"
+    
+    cover_letter += f"""Based on the job description, I understand this role requires someone who can tackle complex technical challenges. My background aligns well with the requirements, and I am confident I can make a meaningful contribution to {company}.
+
+"""
+    
+    # Add a paragraph about enthusiasm
+    cover_letter += f"""I am particularly drawn to this opportunity because it combines my technical expertise with the chance to work on innovative projects. I am eager to bring my skills and passion to your team and help drive success at {company}.
+
+Thank you for considering my application. I look forward to discussing how my experience and enthusiasm can contribute to your team.
+
+Sincerely,
+[Your Name]"""
+    
+    return cover_letter
+
+def generate_cover_letter_with_openai(prompt, api_key, model):
+    """Generate cover letter using OpenAI"""
+    try:
+        openai.api_key = api_key
+        completion = openai.ChatCompletion.create(
+            model=model,
+            messages=[
+                {"role": "user", "content": prompt},
+            ],
+        )
+        return completion.choices[0].message.content
+    except Exception as e:
+        print(f"Error connecting to OpenAI: {e}")
+        return None
+
+def update_cover_letter_status(message, job_id=None, completed=False):
+    """Update cover letter generation status"""
+    global cover_letter_status
+    cover_letter_status["message"] = message
+    cover_letter_status["running"] = not completed
+    cover_letter_status["completed"] = completed
+    if job_id:
+        cover_letter_status["job_id"] = job_id
+
+@app.route('/api/cover-letter/status', methods=['GET'])
+def get_cover_letter_status():
+    """Get current cover letter generation status"""
+    return jsonify(cover_letter_status)
+
+@app.route('/api/cover-letter/pdf/<int:job_id>', methods=['GET'])
+def generate_cover_letter_pdf(job_id):
+    """Generate PDF of cover letter"""
     conn = sqlite3.connect(config["db_path"])
     cursor = conn.cursor()
+    cursor.execute("SELECT cover_letter, title, company FROM jobs WHERE id = ?", (job_id,))
+    result = cursor.fetchone()
+    conn.close()
+    
+    if not result or not result[0]:
+        return jsonify({"error": "Cover letter not found"}), 404
+    
+    cover_letter_text = result[0]
+    job_title = result[1]
+    company = result[2]
+    
+    # Create PDF in memory
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter,
+                            rightMargin=72, leftMargin=72,
+                            topMargin=72, bottomMargin=18)
+    
+    # Container for the 'Flowable' objects
+    elements = []
+    
+    # Define styles
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=16,
+        textColor='#4CAF50',
+        spaceAfter=30,
+        alignment=TA_LEFT
+    )
+    
+    # Add cover letter content
+    # Split by paragraphs and create Paragraph objects
+    paragraphs = cover_letter_text.split('\n\n')
+    for para in paragraphs:
+        if para.strip():
+            # Replace newlines within paragraphs with spaces
+            para_clean = para.replace('\n', ' ').strip()
+            if para_clean:
+                p = Paragraph(para_clean, styles['Normal'])
+                elements.append(p)
+                elements.append(Spacer(1, 12))
+    
+    # Build PDF
+    doc.build(elements)
+    buffer.seek(0)
+    
+    # Create response
+    filename = f"Cover_Letter_{company}_{job_title}_{datetime.now().strftime('%Y%m%d')}.pdf"
+    filename = filename.replace(' ', '_').replace('/', '_')
+    
+    return Response(
+        buffer.getvalue(),
+        mimetype='application/pdf',
+        headers={
+            'Content-Disposition': f'attachment; filename="{filename}"'
+        }
+    )
 
-    def get_chat_gpt(prompt):
-        try:
-            completion = openai.ChatCompletion.create(
-                model=config["OpenAI_Model"],
-                messages=[
-                    {"role": "user", "content": prompt},
-                ],
-            )
-            return completion.choices[0].message.content
-        except Exception as e:
-            print(f"Error connecting to OpenAI: {e}")
-            return None
+@app.route('/get_CoverLetter/<int:job_id>', methods=['POST'])
+def get_CoverLetter(job_id):
+    global cover_letter_status
+    
+    if cover_letter_status["running"]:
+        return jsonify({"error": "Cover letter generation is already in progress"}), 400
+    
+    print("CoverLetter clicked!")
+    update_cover_letter_status("Starting cover letter generation...", job_id, False)
+    
+    conn = sqlite3.connect(config["db_path"])
+    cursor = conn.cursor()
 
     cursor.execute("SELECT job_description, title, company FROM jobs WHERE id = ?", (job_id,))
     job_tuple = cursor.fetchone()
     if job_tuple is not None:
         column_names = [column[0] for column in cursor.description]
         job = dict(zip(column_names, job_tuple))
+    else:
+        conn.close()
+        update_cover_letter_status("Error: Job not found", job_id, True)
+        return jsonify({"error": "Job not found"}), 404
     
+    update_cover_letter_status("Reading resume from PDF...", job_id, False)
     resume = read_pdf(config["resume_path"])
 
     # Check if resume is None
     if resume is None:
+        conn.close()
         print("Error: Resume not found or couldn't be read.")
+        update_cover_letter_status("Error: Resume not found or couldn't be read.", job_id, True)
         return jsonify({"error": "Resume not found or couldn't be read."}), 400
 
-    # Check if OpenAI API key is empty
-    if not config["OpenAI_API_KEY"]:
-        print("Error: OpenAI API key is empty.")
-        return jsonify({"error": "OpenAI API key is empty."}), 400
-
-    openai.api_key = config["OpenAI_API_KEY"]
+    provider = config.get("cover_letter_provider", "template").lower()
     consideration = ""
-    user_prompt = ("You are a career coach with over 15 years of experience helping job seekers land their dream jobs in tech. You are helping a candidate to write a cover letter for the below role. Approach this task in three steps. Step 1. Identify main challenges someone in this position would face day to day. Step 2. Write an attention grabbing hook for your cover letter that highlights your experience and qualifications in a way that shows you empathize and can successfully take on challenges of the role. Consider incorporating specific examples of how you tackled these challenges in your past work, and explore creative ways to express your enthusiasm for the opportunity. Put emphasis on how the candidate can contribute to company as opposed to just listing accomplishments. Keep your hook within 100 words or less. Step 3. Finish writing the cover letter based on the resume and keep it within 250 words. Respond with final cover letter only. \n job description: " + job['job_description'] + "\n company: " + job['company'] + "\n title: " + job['title'] + "\n resume: " + resume)
+    
+    update_cover_letter_status(f"Using {provider.upper()} provider to generate cover letter...", job_id, False)
+    
+    # Build the prompt with strict instructions to only use resume information
+    user_prompt = ("CRITICAL: You must ONLY use information that is explicitly stated in the resume provided below. DO NOT make up, invent, or assume any skills, experiences, achievements, or qualifications that are not directly mentioned in the resume. If something is not in the resume, do not mention it.\n\nYou are a career coach helping a candidate write a cover letter. Write a cover letter for the position below using ONLY the information from the resume. Approach this in three steps:\n\nStep 1. Identify main challenges someone in this position would face based on the job description.\n\nStep 2. Write an attention-grabbing hook (100 words or less) that highlights ONLY the candidate's actual experience and qualifications from the resume. Use specific examples ONLY if they are mentioned in the resume. Do not invent examples or achievements.\n\nStep 3. Complete the cover letter (total 250 words) using ONLY information from the resume. Match the candidate's actual skills and experiences to the job requirements. Do not add any information not present in the resume.\n\nREMEMBER: Every skill, experience, achievement, and qualification you mention MUST be explicitly stated in the resume. If it's not in the resume, do not include it.\n\nJob Description: " + job['job_description'] + "\n\nCompany: " + job['company'] + "\n\nJob Title: " + job['title'] + "\n\nResume:\n" + resume)
     if consideration:
         user_prompt += "\nConsider incorporating that " + consideration
 
-    response = get_chat_gpt(user_prompt)
+    response = None
+    
+    # Try to generate cover letter based on provider
+    if provider == "ollama":
+        ollama_url = config.get("ollama_base_url", "http://localhost:11434")
+        ollama_model = config.get("ollama_model", "llama3.2")
+        print(f"Using Ollama provider with model {ollama_model}")
+        update_cover_letter_status(f"Generating initial draft with Ollama ({ollama_model})...", job_id, False)
+        response = generate_cover_letter_with_ollama(user_prompt, ollama_url, ollama_model)
+        
+        if response:
+            update_cover_letter_status("Initial draft generated. Refining cover letter...", job_id, False)
+            # Refinement step
+            user_prompt2 = ("CRITICAL: You must ONLY use information that is explicitly stated in the resume provided below. DO NOT make up, invent, or assume any skills, experiences, achievements, or qualifications that are not directly mentioned in the resume.\n\nYou are helping improve a cover letter. Review the draft below and improve it while ensuring EVERY claim is backed by information in the resume.\n\nStep 1. Set formality: 1 = conversational, current draft = 10. Target formality = 7.\n\nStep 2. Identify 3-5 improvements, ensuring all examples come from the resume.\n\nStep 3. Rewrite the cover letter with formality = 7, using ONLY information from the resume. Remove any claims not supported by the resume. Avoid subjective qualifiers like 'drastic' or 'transformational'. Keep within 250 words.\n\nJob Description: " + job['job_description'] + "\n\nResume:\n" + resume + "\n\nCurrent Cover Letter Draft:\n" + response + "\n\nRespond with the improved cover letter only, ensuring all information comes from the resume.")
+            refined = generate_cover_letter_with_ollama(user_prompt2, ollama_url, ollama_model)
+            if refined:
+                response = refined
+                update_cover_letter_status("Cover letter refined successfully!", job_id, False)
+                
+    elif provider == "groq":
+        groq_key = config.get("groq_api_key", "")
+        if not groq_key:
+            conn.close()
+            update_cover_letter_status("Error: Groq API key not configured", job_id, True)
+            return jsonify({"error": "Groq API key is not configured. Please add 'groq_api_key' to config.json or get a free key from https://console.groq.com"}), 400
+        print("Using Groq provider")
+        update_cover_letter_status("Generating initial draft with Groq...", job_id, False)
+        response = generate_cover_letter_with_groq(user_prompt, groq_key)
+        
+        if response:
+            update_cover_letter_status("Initial draft generated. Refining cover letter...", job_id, False)
+            # Refinement step
+            user_prompt2 = ("CRITICAL: You must ONLY use information that is explicitly stated in the resume provided below. DO NOT make up, invent, or assume any skills, experiences, achievements, or qualifications that are not directly mentioned in the resume.\n\nYou are helping improve a cover letter. Review the draft below and improve it while ensuring EVERY claim is backed by information in the resume.\n\nStep 1. Set formality: 1 = conversational, current draft = 10. Target formality = 7.\n\nStep 2. Identify 3-5 improvements, ensuring all examples come from the resume.\n\nStep 3. Rewrite the cover letter with formality = 7, using ONLY information from the resume. Remove any claims not supported by the resume. Avoid subjective qualifiers like 'drastic' or 'transformational'. Keep within 250 words.\n\nJob Description: " + job['job_description'] + "\n\nResume:\n" + resume + "\n\nCurrent Cover Letter Draft:\n" + response + "\n\nRespond with the improved cover letter only, ensuring all information comes from the resume.")
+            refined = generate_cover_letter_with_groq(user_prompt2, groq_key)
+            if refined:
+                response = refined
+                update_cover_letter_status("Cover letter refined successfully!", job_id, False)
+                
+    elif provider == "openai":
+        openai_key = config.get("OpenAI_API_KEY", "")
+        openai_model = config.get("OpenAI_Model", "gpt-3.5-turbo")
+        if not openai_key:
+            conn.close()
+            update_cover_letter_status("Error: OpenAI API key is empty", job_id, True)
+            return jsonify({"error": "OpenAI API key is empty."}), 400
+        print("Using OpenAI provider")
+        update_cover_letter_status(f"Generating initial draft with OpenAI ({openai_model})...", job_id, False)
+        response = generate_cover_letter_with_openai(user_prompt, openai_key, openai_model)
+        
+        if response:
+            update_cover_letter_status("Initial draft generated. Refining cover letter...", job_id, False)
+            # Refinement step
+            user_prompt2 = ("CRITICAL: You must ONLY use information that is explicitly stated in the resume provided below. DO NOT make up, invent, or assume any skills, experiences, achievements, or qualifications that are not directly mentioned in the resume.\n\nYou are helping improve a cover letter. Review the draft below and improve it while ensuring EVERY claim is backed by information in the resume.\n\nStep 1. Set formality: 1 = conversational, current draft = 10. Target formality = 7.\n\nStep 2. Identify 3-5 improvements, ensuring all examples come from the resume.\n\nStep 3. Rewrite the cover letter with formality = 7, using ONLY information from the resume. Remove any claims not supported by the resume. Avoid subjective qualifiers like 'drastic' or 'transformational'. Keep within 250 words.\n\nJob Description: " + job['job_description'] + "\n\nResume:\n" + resume + "\n\nCurrent Cover Letter Draft:\n" + response + "\n\nRespond with the improved cover letter only, ensuring all information comes from the resume.")
+            refined = generate_cover_letter_with_openai(user_prompt2, openai_key, openai_model)
+            if refined:
+                response = refined
+                update_cover_letter_status("Cover letter refined successfully!", job_id, False)
+                
+    else:  # template fallback
+        print("Using template-based provider (no API needed)")
+        update_cover_letter_status("Generating cover letter from template...", job_id, False)
+        response = generate_cover_letter_with_template(
+            job['job_description'], 
+            job['title'], 
+            job['company'], 
+            resume
+        )
+        update_cover_letter_status("Template-based cover letter generated!", job_id, False)
+
     if response is None:
-        return jsonify({"error": "Failed to get a response from OpenAI."}), 500
+        conn.close()
+        update_cover_letter_status(f"Error: Failed to generate cover letter using {provider} provider", job_id, True)
+        return jsonify({"error": f"Failed to generate cover letter using {provider} provider."}), 500
 
-    user_prompt2 = ("You are young but experienced career coach helping job seekers land their dream jobs in tech. I need your help crafting a cover letter. Here is a job description: " + job['job_description'] + "\nhere is my resume: " + resume + "\nHere's the cover letter I got so far: " + response + "\nI need you to help me improve it. Let's approach this in following steps. \nStep 1. Please set the formality scale as follows: 1 is conversational English, my initial Cover letter draft is 10. Step 2. Identify three to five ways this cover letter can be improved, and elaborate on each way with at least one thoughtful sentence. Step 4. Suggest an improved cover letter based on these suggestions with the Formality Score set to 7. Avoid subjective qualifiers such as drastic, transformational, etc. Keep the final cover letter within 250 words. Please respond with the final cover letter only.")
-    if user_prompt2:
-        response = get_chat_gpt(user_prompt2)
-        if response is None:
-            return jsonify({"error": "Failed to get a response from OpenAI."}), 500
-
+    update_cover_letter_status("Saving cover letter to database...", job_id, False)
     query = "UPDATE jobs SET cover_letter = ? WHERE id = ?"
     print(f'Executing query: {query} with job_id: {job_id} and cover letter: {response}')
     cursor.execute(query, (response, job_id))
     conn.commit()
     conn.close()
+    
+    update_cover_letter_status("Cover letter generated successfully!", job_id, True)
     return jsonify({"cover_letter": response}), 200
 
 def filter_jobs_by_config(jobs_list, config):
@@ -410,6 +664,9 @@ def verify_db_schema():
 # Global variable to track search status
 search_status = {"running": False, "message": "", "completed": False, "completed_at": None, "stop_requested": False}
 search_process = None  # Track the subprocess so we can stop it
+
+# Global variable to track cover letter generation status
+cover_letter_status = {"running": False, "message": "", "job_id": None, "completed": False}
 
 @app.route('/search_config')
 def search_config():
