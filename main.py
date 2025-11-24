@@ -167,11 +167,11 @@ def get_jobcards(config):
     
     # Remove duplicates
     all_jobs = remove_duplicates(all_jobs, config)
-    print(f"Total job cards after removing duplicates: {len(all_jobs)}")
+    print(f"Total job cards after removing duplicates: {len(all_jobs)}", flush=True)
     
     # Remove irrelevant jobs based on filters
     all_jobs = remove_irrelevant_jobs(all_jobs, config)
-    print(f"Total job cards after removing irrelevant jobs: {len(all_jobs)}")
+    print(f"Total job cards after removing irrelevant jobs: {len(all_jobs)}", flush=True)
     
     return all_jobs
 
@@ -214,56 +214,191 @@ def verify_jobs_table_schema(conn, table_name):
     except Exception as e:
         print(f"Error verifying table schema: {e}")
 
+def delete_old_unapplied_jobs(conn, config):
+    """
+    Delete jobs that haven't been applied to within the specified number of days.
+    
+    Args:
+        conn: Database connection
+        config: Configuration dictionary
+        
+    Returns:
+        int: Number of jobs deleted
+    """
+    if conn is None:
+        return 0
+    
+    days_threshold = config.get('delete_unapplied_jobs_after_days', 0)
+    
+    # If set to 0 or not set, don't delete anything
+    if days_threshold <= 0:
+        return 0
+    
+    try:
+        cursor = conn.cursor()
+        jobs_tablename = config.get('jobs_tablename', 'jobs')
+        
+        # Check if date_loaded column exists
+        cursor.execute(f"PRAGMA table_info({jobs_tablename})")
+        columns = [column[1] for column in cursor.fetchall()]
+        
+        if 'date_loaded' not in columns:
+            print(f"  [WARNING] date_loaded column not found in {jobs_tablename} table. Skipping cleanup.", flush=True)
+            return 0
+        
+        # Calculate the cutoff date (as datetime object for comparison)
+        cutoff_date = datetime.now() - timedelta(days=days_threshold)
+        
+        # Get all unapplied jobs with date_loaded
+        cursor.execute(f"""
+            SELECT id, date_loaded FROM {jobs_tablename}
+            WHERE applied = 0 
+            AND date_loaded IS NOT NULL
+            AND date_loaded != ''
+        """)
+        
+        jobs_to_delete = []
+        for row in cursor.fetchall():
+            job_id, date_loaded_str = row
+            try:
+                # Try to parse the date_loaded string
+                # It might be in different formats, so try a few common ones
+                date_loaded = None
+                for date_format in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d"]:
+                    try:
+                        date_loaded = datetime.strptime(date_loaded_str, date_format)
+                        break
+                    except ValueError:
+                        continue
+                
+                # If we couldn't parse it, skip this job
+                if date_loaded is None:
+                    continue
+                
+                # Check if the job is older than the threshold
+                if date_loaded < cutoff_date:
+                    jobs_to_delete.append(job_id)
+            except Exception as e:
+                # Skip jobs with invalid date formats
+                continue
+        
+        if jobs_to_delete:
+            # Delete the jobs
+            placeholders = ','.join(['?' for _ in jobs_to_delete])
+            cursor.execute(f"""
+                DELETE FROM {jobs_tablename}
+                WHERE id IN ({placeholders})
+            """, jobs_to_delete)
+            
+            conn.commit()
+            print(f"  [OK] Deleted {len(jobs_to_delete)} unapplied job(s) older than {days_threshold} days", flush=True)
+            return len(jobs_to_delete)
+        else:
+            print(f"  [OK] No unapplied jobs older than {days_threshold} days to delete", flush=True)
+            return 0
+            
+    except Exception as e:
+        print(f"  [ERROR] Error deleting old unapplied jobs: {e}", flush=True)
+        return 0
+
 def main(config_file):
     start_time = tm.perf_counter()
     job_list = []
 
+    print("=" * 80, flush=True)
+    print("JOB SEARCH STARTED", flush=True)
+    print("=" * 80, flush=True)
+    
+    print(f"\n[STEP 1/7] Loading configuration from {config_file}...", flush=True)
     config = load_config(config_file)
+    print(f"[OK] Configuration loaded successfully", flush=True)
+    print(f"  - Pages to scrape: {config.get('pages_to_scrape', 10)}", flush=True)
+    print(f"  - Rounds: {config.get('rounds', 1)}", flush=True)
+    print(f"  - Search queries: {len(config.get('search_queries', []))}", flush=True)
+    print(f"  - Days to scrape: {config.get('days_to_scrape', 10)}", flush=True)
+    
     jobs_tablename = config['jobs_tablename'] # name of the table to store the "approved" jobs
     filtered_jobs_tablename = config['filtered_jobs_tablename'] # name of the table to store the jobs that have been filtered out based on description keywords (so that in future they are not scraped again)
     
+    print(f"\n[STEP 2/7] Initializing LinkedIn scraper...", flush=True)
     # Initialize scraper (for now LinkedIn, but will support multiple sources later)
     linkedin_scraper = LinkedInScraper(config)
+    print(f"[OK] LinkedIn scraper initialized", flush=True)
     
+    print(f"\n[STEP 3/7] Scraping job cards from search results...", flush=True)
+    print(f"  This step may take a while based on the number of pages and search queries.", flush=True)
     #Scrape search results page and get job cards. This step might take a while based on the number of pages and search queries.
     all_jobs = get_jobcards(config)
+    print(f"[OK] Job card scraping completed", flush=True)
+    
+    print(f"\n[STEP 4/7] Connecting to database...", flush=True)
     conn = create_connection(config)
+    if conn:
+        print(f"[OK] Database connection established: {config['db_path']}", flush=True)
+    else:
+        print(f"[ERROR] Failed to connect to database", flush=True)
+        return
     
     # Verify schema has source column
+    print(f"\n[STEP 5/7] Verifying database schema...", flush=True)
     verify_jobs_table_schema(conn, jobs_tablename)
     verify_jobs_table_schema(conn, filtered_jobs_tablename)
+    print(f"[OK] Database schema verified", flush=True)
     
     #filtering out jobs that are already in the database
+    print(f"\n[STEP 6/7] Filtering out jobs that already exist in database...", flush=True)
     all_jobs = find_new_jobs(all_jobs, conn, config)
-    print ("Total new jobs found after comparing to the database: ", len(all_jobs))
+    print(f"[OK] Filtering completed", flush=True)
+    print(f"  - Total new jobs found after comparing to the database: {len(all_jobs)}", flush=True)
 
     if len(all_jobs) > 0:
-
-        for job in all_jobs:
+        print(f"\n[STEP 7/7] Processing {len(all_jobs)} new jobs...", flush=True)
+        print(f"  - Fetching job descriptions and applying filters...", flush=True)
+        
+        processed_count = 0
+        skipped_count = 0
+        
+        for idx, job in enumerate(all_jobs, 1):
             # Skip jobs with invalid dates
             if not job.get('date'):
+                skipped_count += 1
                 continue
                 
             job_date = convert_date_format(job['date'])
             if not job_date:
+                skipped_count += 1
                 continue
                 
             job_date = datetime.combine(job_date, time())
             #if job is older than a week, skip it
             if job_date < datetime.now() - timedelta(days=config['days_to_scrape']):
+                skipped_count += 1
                 continue
-            print('Found new job: ', job['title'], 'at ', job['company'], job['job_url'])
+            
+            print(f"  [{idx}/{len(all_jobs)}] Processing: {job['title']} at {job['company']}", flush=True)
+            print(f"      URL: {job['job_url']}", flush=True)
             
             # Get job description using the scraper
+            print(f"      -> Fetching job description...", flush=True)
             job['job_description'] = linkedin_scraper.get_job_description(job['job_url'])
             language = safe_detect(job['job_description'])
             if language not in config['languages']:
-                print('Job description language not supported: ', language)
+                print(f"      [WARNING] Job description language not supported: {language}", flush=True)
                 #continue
             job_list.append(job)
+            processed_count += 1
+        
+        print(f"\n  [OK] Job processing completed", flush=True)
+        print(f"    - Processed: {processed_count}", flush=True)
+        print(f"    - Skipped: {skipped_count}", flush=True)
+        
         #Final check - removing jobs based on job description keywords words from the config file
+        print(f"\n  -> Applying final filters based on job description keywords...", flush=True)
         jobs_to_add = remove_irrelevant_jobs(job_list, config)
-        print ("Total jobs to add: ", len(jobs_to_add))
+        print(f"  [OK] Final filtering completed", flush=True)
+        print(f"    - Total jobs to add to database: {len(jobs_to_add)}", flush=True)
+        print(f"    - Jobs filtered out: {len(job_list) - len(jobs_to_add)}", flush=True)
+        
         #Create a list for jobs removed based on job description keywords - they will be added to the filtered_jobs table
         filtered_list = [job for job in job_list if job not in jobs_to_add]
         df = pd.DataFrame(jobs_to_add)
@@ -274,6 +409,7 @@ def main(config_file):
         df_filtered['date_loaded'] = df_filtered['date_loaded'].astype(str)        
         
         if conn is not None:
+            print(f"\n  -> Saving jobs to database...", flush=True)
             #Update or Create the database table for the job list
             if table_exists(conn, jobs_tablename):
                 update_table(conn, df, jobs_tablename)
@@ -285,16 +421,30 @@ def main(config_file):
                 update_table(conn, df_filtered, filtered_jobs_tablename)
             else:
                 create_table(conn, df_filtered, filtered_jobs_tablename)
+            print(f"  [OK] Database updated successfully", flush=True)
         else:
-            print("Error! cannot create the database connection.")
+            print("  [ERROR] Cannot create the database connection.", flush=True)
         
+        print(f"\n  -> Exporting to CSV files...", flush=True)
         df.to_csv('linkedin_jobs.csv', index=False, encoding='utf-8')
         df_filtered.to_csv('linkedin_jobs_filtered.csv', index=False, encoding='utf-8')
+        print(f"  [OK] CSV files exported", flush=True)
     else:
-        print("No jobs found")
+        print(f"\n[STEP 7/7] No new jobs found to process", flush=True)
+    
+    # Cleanup old unapplied jobs if configured
+    delete_days = config.get('delete_unapplied_jobs_after_days', 0)
+    if delete_days > 0 and conn is not None:
+        print(f"\n[CLEANUP] Deleting unapplied jobs older than {delete_days} days...", flush=True)
+        deleted_count = delete_old_unapplied_jobs(conn, config)
+        if deleted_count > 0:
+            print(f"  -> Cleaned up {deleted_count} old unapplied job(s)", flush=True)
     
     end_time = tm.perf_counter()
-    print(f"Scraping finished in {end_time - start_time:.2f} seconds")
+    print("\n" + "=" * 80, flush=True)
+    print(f"JOB SEARCH COMPLETED", flush=True)
+    print(f"Total time: {end_time - start_time:.2f} seconds", flush=True)
+    print("=" * 80, flush=True)
 
 
 if __name__ == "__main__":

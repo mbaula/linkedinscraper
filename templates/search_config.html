@@ -277,18 +277,28 @@
                     <label>Timespan</label>
                     <input type="text" id="timespan" placeholder="e.g., r84600">
                 </div>
+
+                <div class="form-group">
+                    <label>Delete Unapplied Jobs After (days)</label>
+                    <input type="number" id="delete_unapplied_jobs_after_days" min="0" value="0">
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        Jobs that haven't been applied to will be automatically deleted after this many days. 
+                        Set to 0 to disable automatic deletion.
+                    </small>
+                </div>
             </div>
 
             <!-- Action Buttons -->
             <div class="button-group">
                 <button type="button" class="btn btn-primary" onclick="saveConfig()">Save Configuration</button>
                 <button type="button" class="btn btn-success" onclick="executeSearch()" id="execute-btn">Execute Search</button>
+                <button type="button" class="btn btn-danger" onclick="stopSearch()" id="stop-btn" style="display: none;">Stop Search</button>
             </div>
         </form>
 
         <div id="search-status" style="margin-top: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 5px; display: none;">
             <h3>Search Status</h3>
-            <p id="status-text"></p>
+            <div id="status-text" style="white-space: pre-wrap; font-family: monospace; background-color: #fff; padding: 10px; border-radius: 5px; max-height: 400px; overflow-y: auto; border: 1px solid #ddd;"></div>
         </div>
     </div>
 
@@ -342,6 +352,7 @@
             document.getElementById('rounds').value = config.rounds || 1;
             document.getElementById('days_to_scrape').value = config.days_to_scrape || 10;
             document.getElementById('timespan').value = config.timespan || '';
+            document.getElementById('delete_unapplied_jobs_after_days').value = config.delete_unapplied_jobs_after_days || 0;
         }
 
         function addSearchQuery(query = null, index = null) {
@@ -444,7 +455,8 @@
                 pages_to_scrape: parseInt(document.getElementById('pages_to_scrape').value),
                 rounds: parseInt(document.getElementById('rounds').value),
                 days_to_scrape: parseInt(document.getElementById('days_to_scrape').value),
-                timespan: document.getElementById('timespan').value
+                timespan: document.getElementById('timespan').value,
+                delete_unapplied_jobs_after_days: parseInt(document.getElementById('delete_unapplied_jobs_after_days').value) || 0
             };
 
             fetch('/api/config', {
@@ -507,20 +519,26 @@
                 .then(data => {
                     const statusDiv = document.getElementById('search-status');
                     const statusText = document.getElementById('status-text');
-                    const btn = document.getElementById('execute-btn');
+                    const executeBtn = document.getElementById('execute-btn');
+                    const stopBtn = document.getElementById('stop-btn');
                     
                     if (data.running) {
                         statusDiv.style.display = 'block';
                         statusText.textContent = data.message || 'Search in progress...';
-                        btn.disabled = true;
-                        btn.innerHTML = 'Search Running... <span class="loading"></span>';
+                        // Auto-scroll to bottom to show latest messages
+                        statusText.scrollTop = statusText.scrollHeight;
+                        executeBtn.disabled = true;
+                        executeBtn.innerHTML = 'Search Running... <span class="loading"></span>';
+                        stopBtn.style.display = 'inline-block';
                     } else {
                         if (data.message) {
                             statusDiv.style.display = 'block';
                             statusText.textContent = data.message;
+                            statusText.scrollTop = statusText.scrollHeight;
                         }
-                        btn.disabled = false;
-                        btn.innerHTML = 'Execute Search';
+                        executeBtn.disabled = false;
+                        executeBtn.innerHTML = 'Execute Search';
+                        stopBtn.style.display = 'none';
                         
                         // If search just completed, signal jobs page to refresh
                         if (data.completed && data.completed_at) {
@@ -532,6 +550,36 @@
                 .catch(error => {
                     console.error('Error checking search status:', error);
                 });
+        }
+
+        function stopSearch() {
+            if (!confirm('Are you sure you want to stop the current search?')) {
+                return;
+            }
+            
+            const stopBtn = document.getElementById('stop-btn');
+            stopBtn.disabled = true;
+            stopBtn.innerHTML = 'Stopping...';
+            
+            fetch('/api/search/stop', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showMessage('Error stopping search: ' + data.error, 'error');
+                    stopBtn.disabled = false;
+                    stopBtn.innerHTML = 'Stop Search';
+                } else {
+                    showMessage('Stop request sent. Search will stop shortly.', 'info');
+                    // Status will update on next poll
+                }
+            })
+            .catch(error => {
+                showMessage('Error stopping search: ' + error, 'error');
+                stopBtn.disabled = false;
+                stopBtn.innerHTML = 'Stop Search';
+            });
         }
 
         function showMessage(message, type) {

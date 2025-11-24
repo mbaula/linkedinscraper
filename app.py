@@ -408,7 +408,8 @@ def verify_db_schema():
     conn.close()
 
 # Global variable to track search status
-search_status = {"running": False, "message": "", "completed": False, "completed_at": None}
+search_status = {"running": False, "message": "", "completed": False, "completed_at": None, "stop_requested": False}
+search_process = None  # Track the subprocess so we can stop it
 
 @app.route('/search_config')
 def search_config():
@@ -600,30 +601,73 @@ def export_applications_csv():
 @app.route('/api/search/execute', methods=['POST'])
 def execute_search():
     """Execute the search/scraping process"""
-    global search_status
+    global search_status, search_process
     
     if search_status["running"]:
         return jsonify({"error": "Search is already running"}), 400
     
     def run_search():
-        global search_status
+        global search_status, search_process
         from datetime import datetime
         search_status["running"] = True
-        search_status["message"] = "Search started..."
+        search_status["message"] = "Search starting...\nInitializing scraper..."
+        search_status["stop_requested"] = False
+        search_status["completed"] = False
+        
         try:
-            # Run the main.py script
-            result = subprocess.run(
-                [sys.executable, 'main.py', 'config.json'],
-                capture_output=True,
+            # Set environment to ensure unbuffered output
+            env = os.environ.copy()
+            env['PYTHONUNBUFFERED'] = '1'
+            
+            # Run the main.py script with real-time output capture
+            # Use -u flag for unbuffered Python output
+            search_process = subprocess.Popen(
+                [sys.executable, '-u', 'main.py', 'config.json'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
-                cwd=os.getcwd()
+                bufsize=0,  # Unbuffered
+                universal_newlines=True,
+                cwd=os.getcwd(),
+                env=env
             )
-            if result.returncode == 0:
-                search_status["message"] = "Search completed successfully"
+            
+            # Read output line by line and update status
+            output_lines = []
+            for line in iter(search_process.stdout.readline, ''):
+                if search_status["stop_requested"]:
+                    search_process.terminate()
+                    search_status["message"] = "\n".join(output_lines[-30:]) + "\n\n[WARNING] Search stopped by user"
+                    break
+                
+                if line:
+                    line = line.strip()
+                    if line:
+                        output_lines.append(line)
+                        # Keep only last 50 lines to avoid huge messages
+                        if len(output_lines) > 50:
+                            output_lines.pop(0)
+                        # Update status with latest output (show last 30 lines for better visibility)
+                        search_status["message"] = "\n".join(output_lines[-30:])
+            
+            # Wait for process to complete
+            search_process.wait()
+            
+            # If stop was requested but process already finished, update message
+            if search_status["stop_requested"] and search_process.returncode != -15:  # -15 is SIGTERM
+                # Process finished before we could stop it
+                pass
+            
+            # Check final status
+            if search_status["stop_requested"]:
+                if not search_status["message"].endswith("[WARNING] Search stopped by user"):
+                    search_status["message"] = "\n".join(output_lines[-30:]) + "\n\n[WARNING] Search stopped by user"
+            elif search_process.returncode == 0:
+                search_status["message"] = "\n".join(output_lines[-30:]) + "\n\n[OK] Search completed successfully"
                 search_status["completed"] = True
                 search_status["completed_at"] = datetime.now().isoformat()
             else:
-                search_status["message"] = f"Search completed with errors: {result.stderr}"
+                search_status["message"] = "\n".join(output_lines[-30:]) + f"\n\n[ERROR] Search completed with errors (exit code: {search_process.returncode})"
                 search_status["completed"] = True
                 search_status["completed_at"] = datetime.now().isoformat()
         except Exception as e:
@@ -632,6 +676,7 @@ def execute_search():
             search_status["completed_at"] = datetime.now().isoformat()
         finally:
             search_status["running"] = False
+            search_process = None
     
     # Run search in a separate thread
     thread = threading.Thread(target=run_search)
@@ -639,6 +684,30 @@ def execute_search():
     thread.start()
     
     return jsonify({"success": True, "message": "Search started"})
+
+@app.route('/api/search/stop', methods=['POST'])
+def stop_search():
+    """Stop the currently running search"""
+    global search_status, search_process
+    
+    if not search_status["running"]:
+        return jsonify({"error": "No search is currently running"}), 400
+    
+    search_status["stop_requested"] = True
+    
+    if search_process:
+        try:
+            search_process.terminate()
+            # Give it a moment to terminate gracefully
+            import time
+            time.sleep(1)
+            if search_process.poll() is None:
+                # If still running, force kill
+                search_process.kill()
+        except Exception as e:
+            return jsonify({"error": f"Error stopping search: {str(e)}"}), 500
+    
+    return jsonify({"success": True, "message": "Stop request sent"})
 
 if __name__ == "__main__":
     import sys

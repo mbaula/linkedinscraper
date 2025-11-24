@@ -27,24 +27,48 @@ class LinkedInScraper(BaseScraper):
         search_queries = self.config.get('search_queries', [])
         timespan = self.config.get('timespan', 'r84600')
         
-        for k in range(0, rounds):
-            for query in search_queries:
-                keywords = quote(query.get('keywords', ''))
-                location = quote(query.get('location', ''))
+        total_rounds = rounds
+        total_queries = len(search_queries)
+        total_pages = total_rounds * total_queries * pages_to_scrape
+        current_page = 0
+        
+        print(f"  Starting job card scraping:", flush=True)
+        print(f"    - Rounds: {rounds}", flush=True)
+        print(f"    - Search queries: {total_queries}", flush=True)
+        print(f"    - Pages per query: {pages_to_scrape}", flush=True)
+        print(f"    - Total pages to scrape: {total_pages}", flush=True)
+        
+        for round_num in range(0, rounds):
+            print(f"\n  Round {round_num + 1}/{rounds}:", flush=True)
+            for query_idx, query in enumerate(search_queries, 1):
+                keywords = query.get('keywords', '')
+                location = query.get('location', '')
                 f_wt = query.get('f_WT', '')
                 
-                for i in range(0, pages_to_scrape):
+                print(f"\n    Query {query_idx}/{total_queries}: '{keywords}' in '{location}'", flush=True)
+                if f_wt:
+                    print(f"      Work type filter: {f_wt}", flush=True)
+                
+                keywords_encoded = quote(keywords)
+                location_encoded = quote(location)
+                
+                for page_num in range(0, pages_to_scrape):
+                    current_page += 1
                     url = (f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?"
-                          f"keywords={keywords}&location={location}&f_TPR=&f_WT={f_wt}&geoId=&"
-                          f"f_TPR={timespan}&start={25*i}")
+                          f"keywords={keywords_encoded}&location={location_encoded}&f_TPR=&f_WT={f_wt}&geoId=&"
+                          f"f_TPR={timespan}&start={25*page_num}")
                     
+                    print(f"      -> Scraping page {page_num + 1}/{pages_to_scrape} (Overall: {current_page}/{total_pages})...", flush=True)
                     soup = self.get_with_retry(url)
                     if soup:
                         jobs = self._transform_search_results(soup)
                         all_jobs.extend(jobs)
-                        print(f"Finished scraping page: {url}")
+                        print(f"        [OK] Found {len(jobs)} job cards on this page", flush=True)
+                    else:
+                        print(f"        [ERROR] Failed to scrape page (may be empty or rate limited)", flush=True)
         
-        print(f"Total job cards scraped: {len(all_jobs)}")
+        print(f"\n  [OK] Job card scraping completed", flush=True)
+        print(f"    - Total job cards scraped: {len(all_jobs)}", flush=True)
         return all_jobs
     
     def _transform_search_results(self, soup: BeautifulSoup) -> List[Dict]:
@@ -121,9 +145,15 @@ class LinkedInScraper(BaseScraper):
         """
         soup = self.get_with_retry(job_url)
         if not soup:
+            print(f"        [ERROR] Could not fetch job description from {job_url}", flush=True)
             return "Could not fetch job description"
         
-        return self._transform_job_description(soup)
+        description = self._transform_job_description(soup)
+        if description and description != "Could not find Job Description":
+            print(f"        [OK] Job description fetched ({len(description)} characters)", flush=True)
+        else:
+            print(f"        [WARNING] Job description not found or empty", flush=True)
+        return description
     
     def _transform_job_description(self, soup: BeautifulSoup) -> str:
         """
