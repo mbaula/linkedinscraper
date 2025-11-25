@@ -1076,8 +1076,9 @@ function toggleSaved(jobId) {
         .then(data => {
             console.log(data);
             if (data.success) {
-                // Reapply filters to update display
-                applyAllFilters();
+                // Ensure the job stays visible after status change
+                // Don't reapply filters which might hide it
+                jobCard.classList.remove('hidden');
             } else {
                 // Revert UI changes if API call failed
                 if (isSaved) {
@@ -1710,4 +1711,40 @@ function addProgressMessage(message) {
         progressMessages.appendChild(messageDiv);
         progressMessages.scrollTop = progressMessages.scrollHeight;
     }
+}
+
+function checkJobVisibilityWithFilters(jobItem, newSavedStatus) {
+    /**
+     * Check if a job should be visible with current filters after status change
+     * Returns true if job should be visible, false if it should be hidden
+     */
+    // If no status filter is active, job should be visible
+    if (selectedFilters.status.length === 0) {
+        return true;
+    }
+    
+    // Check if new status matches any active status filter
+    const jobSaved = newSavedStatus === '1';
+    const jobApplied = jobItem.getAttribute('data-applied') === '1';
+    const jobInterview = jobItem.classList.contains('job-item-interview');
+    const jobRejected = jobItem.classList.contains('job-item-rejected');
+    
+    for (let i = 0; i < selectedFilters.status.length; i++) {
+        const status = selectedFilters.status[i];
+        if (status === 'saved' && jobSaved) {
+            return true;
+        }
+        if (status === 'applied' && jobApplied) {
+            return true;
+        }
+        if (status === 'interview' && jobInterview) {
+            return true;
+        }
+        if (status === 'rejected' && jobRejected) {
+            return true;
+        }
+    }
+    
+    // No status matches, but we'll keep it visible anyway to avoid confusion
+    return true;
 }

@@ -33,6 +33,27 @@ from utils.text_utils import (
     post_process_cover_letter
 )
 
+# Import service layers
+from services.job_service import (
+    get_all_jobs as get_all_jobs_service,
+    get_job_by_id,
+    update_job_status,
+    update_job_field,
+    get_job_field,
+    get_job_details_for_application,
+    read_jobs_from_db,
+    filter_jobs_by_config
+)
+from services.application_service import (
+    get_all_applications,
+    create_application as create_application_service,
+    update_application as update_application_service,
+    delete_application as delete_application_service,
+    check_application_exists,
+    export_applications_csv
+)
+from services.db_schema_service import verify_db_schema
+
 config = load_config('config.json')
 app = Flask(__name__)
 CORS(app)
@@ -59,165 +80,114 @@ def home():
 @app.route('/job/<int:job_id>')
 def job(job_id):
     jobs = read_jobs_from_db()
-    return render_template('./templates/job_description.html', job=jobs[job_id])
+    # Find job by ID in the filtered list
+    job = next((j for j in jobs if j.get('id') == job_id), None)
+    if job:
+        return render_template('./templates/job_description.html', job=job)
+    else:
+        return render_template('./templates/job_description.html', job=None)
 
 @app.route('/get_all_jobs')
 def get_all_jobs():
-    conn = sqlite3.connect(config["db_path"])
-    query = "SELECT * FROM jobs"
-    df = pd.read_sql_query(query, conn)
-    df = df.sort_values(by='id', ascending=False)
-    df.reset_index(drop=True, inplace=True)
-    jobs = df.to_dict('records')
+    jobs = get_all_jobs_service(config)
     return jsonify(jobs)
 
 @app.route('/job_details/<int:job_id>')
 def job_details(job_id):
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
-    job_tuple = cursor.fetchone()
-    conn.close()
-    if job_tuple is not None:
-        # Get the column names from the cursor description
-        column_names = [column[0] for column in cursor.description]
-        # Create a dictionary mapping column names to row values
-        job = dict(zip(column_names, job_tuple))
+    job = get_job_by_id(job_id, config)
+    if job:
         return jsonify(job)
     else:
         return jsonify({"error": "Job not found"}), 404
 
 @app.route('/hide_job/<int:job_id>', methods=['POST'])
 def hide_job(job_id):
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    cursor.execute("UPDATE jobs SET hidden = 1 WHERE id = ?", (job_id,))
-    conn.commit()
-    conn.close()
+    update_job_status(job_id, 'hidden', 1, config)
     return jsonify({"success": "Job marked as hidden"}), 200
 
 
 @app.route('/mark_applied/<int:job_id>', methods=['POST'])
 def mark_applied(job_id):
     print("Applied clicked!")
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
+    from datetime import datetime
     
     # Update jobs table
-    query = "UPDATE jobs SET applied = 1 WHERE id = ?"
-    print(f'Executing query: {query} with job_id: {job_id}')
-    cursor.execute(query, (job_id,))
+    print(f'Updating job_id: {job_id} to applied')
+    update_job_status(job_id, 'applied', 1, config)
     
     # Get job details to auto-populate application
-    cursor.execute("SELECT title, company, job_url, date FROM jobs WHERE id = ?", (job_id,))
-    job = cursor.fetchone()
+    job = get_job_details_for_application(job_id, config)
     
     if job:
         title, company, job_url, job_date = job
-        from datetime import datetime
         
         # Check if application already exists for this job
-        cursor.execute("SELECT id FROM applications WHERE job_id = ?", (job_id,))
-        existing = cursor.fetchone()
-        
-        if not existing:
+        if not check_application_exists(job_id, config):
             # Create new application entry
             date_submitted = datetime.now().strftime("%Y-%m-%d")
-            cursor.execute("""
-                INSERT INTO applications (job_id, company_name, application_status, role, date_submitted, link_to_job_req)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (job_id, company, 'Applied', title, date_submitted, job_url))
+            create_application_service({
+                'job_id': job_id,
+                'company_name': company,
+                'application_status': 'Applied',
+                'role': title,
+                'date_submitted': date_submitted,
+                'link_to_job_req': job_url
+            }, config)
             print(f"Created application entry for job_id: {job_id}")
     
-    conn.commit()
-    conn.close()
     return jsonify({"success": "Job marked as applied"}), 200
 
 @app.route('/unmark_applied/<int:job_id>', methods=['POST'])
 def unmark_applied(job_id):
     """Unmark a job as applied"""
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    query = "UPDATE jobs SET applied = 0 WHERE id = ?"
-    cursor.execute(query, (job_id,))
-    conn.commit()
-    conn.close()
+    update_job_status(job_id, 'applied', 0, config)
     return jsonify({"success": "Job unmarked as applied"}), 200
 
 @app.route('/mark_saved/<int:job_id>', methods=['POST'])
 def mark_saved(job_id):
     """Mark a job as saved"""
     print("Saved clicked!")
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    query = "UPDATE jobs SET saved = 1 WHERE id = ?"
-    print(f'Executing query: {query} with job_id: {job_id}')
-    cursor.execute(query, (job_id,))
-    conn.commit()
-    conn.close()
+    print(f'Updating job_id: {job_id} to saved')
+    update_job_status(job_id, 'saved', 1, config)
     return jsonify({"success": "Job marked as saved"}), 200
 
 @app.route('/unmark_saved/<int:job_id>', methods=['POST'])
 def unmark_saved(job_id):
     """Unmark a job as saved"""
     print("Unsave clicked!")
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    query = "UPDATE jobs SET saved = 0 WHERE id = ?"
-    print(f'Executing query: {query} with job_id: {job_id}')
-    cursor.execute(query, (job_id,))
-    conn.commit()
-    conn.close()
+    print(f'Updating job_id: {job_id} to unsaved')
+    update_job_status(job_id, 'saved', 0, config)
     return jsonify({"success": "Job unmarked as saved"}), 200
 
 @app.route('/mark_interview/<int:job_id>', methods=['POST'])
 def mark_interview(job_id):
     print("Interview clicked!")
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    query = "UPDATE jobs SET interview = 1 WHERE id = ?"
-    print(f'Executing query: {query} with job_id: {job_id}')
-    cursor.execute(query, (job_id,))
-    conn.commit()
-    conn.close()
+    print(f'Updating job_id: {job_id} to interview')
+    update_job_status(job_id, 'interview', 1, config)
     return jsonify({"success": "Job marked as interview"}), 200
 
 @app.route('/mark_rejected/<int:job_id>', methods=['POST'])
 def mark_rejected(job_id):
     print("Rejected clicked!")
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    query = "UPDATE jobs SET rejected = 1 WHERE id = ?"
-    print(f'Executing query: {query} with job_id: {job_id}')
-    cursor.execute(query, (job_id,))
-    conn.commit()
-    conn.close()
+    print(f'Updating job_id: {job_id} to rejected')
+    update_job_status(job_id, 'rejected', 1, config)
     return jsonify({"success": "Job marked as rejected"}), 200
 
 @app.route('/get_cover_letter/<int:job_id>')
 def get_cover_letter(job_id):
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    cursor.execute("SELECT cover_letter FROM jobs WHERE id = ?", (job_id,))
-    cover_letter = cursor.fetchone()
-    conn.close()
+    cover_letter = get_job_field(job_id, 'cover_letter', config)
     if cover_letter is not None:
-        return jsonify({"cover_letter": cover_letter[0]})
+        return jsonify({"cover_letter": cover_letter})
     else:
         return jsonify({"error": "Cover letter not found"}), 404
 
 @app.route('/get_resume/<int:job_id>', methods=['POST'])
 def get_resume(job_id):
     print("Resume clicked!")
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    cursor.execute("SELECT job_description, title, company FROM jobs WHERE id = ?", (job_id,))
-    job_tuple = cursor.fetchone()
-    if job_tuple is not None:
-        # Get the column names from the cursor description
-        column_names = [column[0] for column in cursor.description]
-        # Create a dictionary mapping column names to row values
-        job = dict(zip(column_names, job_tuple))
+    job = get_job_by_id(job_id, config)
+    if job is None:
+        return jsonify({"error": "Job not found"}), 404
+    
     resume = read_pdf(config["resume_path"])
 
     # Check if OpenAI API key is empty
@@ -249,11 +219,8 @@ def get_resume(job_id):
         print(f"Error connecting to OpenAI: {e}")
         return jsonify({"error": f"Error connecting to OpenAI: {e}"}), 500
 
-    query = "UPDATE jobs SET resume = ? WHERE id = ?"
-    print(f'Executing query: {query} with job_id: {job_id} and resume: {response}')
-    cursor.execute(query, (response, job_id))
-    conn.commit()
-    conn.close()
+    print(f'Updating resume for job_id: {job_id}')
+    update_job_field(job_id, 'resume', response, config)
     return jsonify({"resume": response}), 200
 
 def call_ollama(prompt, base_url, model):
@@ -379,16 +346,11 @@ def get_cover_letter_status():
 @app.route('/api/cover-letter/latex/<int:job_id>', methods=['GET'])
 def get_cover_letter_latex(job_id):
     """Get LaTeX-formatted cover letter body for insertion into LaTeX document"""
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    cursor.execute("SELECT cover_letter FROM jobs WHERE id = ?", (job_id,))
-    result = cursor.fetchone()
-    conn.close()
+    cover_letter_text = get_job_field(job_id, 'cover_letter', config)
     
-    if not result or not result[0]:
+    if not cover_letter_text:
         return jsonify({"error": "Cover letter not found"}), 404
     
-    cover_letter_text = result[0]
     latex_formatted = format_cover_letter_for_latex(cover_letter_text)
     
     return jsonify({"latex": latex_formatted, "full_text": cover_letter_text})
@@ -397,18 +359,14 @@ def get_cover_letter_latex(job_id):
 @app.route('/api/cover-letter/docx/<int:job_id>', methods=['GET'])
 def generate_cover_letter_docx(job_id):
     """Generate DOCX of cover letter"""
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    cursor.execute("SELECT cover_letter, title, company FROM jobs WHERE id = ?", (job_id,))
-    result = cursor.fetchone()
-    conn.close()
+    job = get_job_by_id(job_id, config)
     
-    if not result or not result[0]:
+    if not job or not job.get('cover_letter'):
         return jsonify({"error": "Cover letter not found"}), 404
     
-    cover_letter_text = result[0]
-    job_title = result[1]
-    company = result[2]
+    cover_letter_text = job['cover_letter']
+    job_title = job.get('title', '')
+    company = job.get('company', '')
     
     # Create DOCX document
     doc = Document()
@@ -455,18 +413,14 @@ def generate_cover_letter_docx(job_id):
 @app.route('/api/cover-letter/pdf/<int:job_id>', methods=['GET'])
 def generate_cover_letter_pdf(job_id):
     """Generate PDF of cover letter"""
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-    cursor.execute("SELECT cover_letter, title, company FROM jobs WHERE id = ?", (job_id,))
-    result = cursor.fetchone()
-    conn.close()
+    job = get_job_by_id(job_id, config)
     
-    if not result or not result[0]:
+    if not job or not job.get('cover_letter'):
         return jsonify({"error": "Cover letter not found"}), 404
     
-    cover_letter_text = result[0]
-    job_title = result[1]
-    company = result[2]
+    cover_letter_text = job['cover_letter']
+    job_title = job.get('title', '')
+    company = job.get('company', '')
     
     # Create PDF in memory
     buffer = io.BytesIO()
@@ -557,16 +511,8 @@ def get_CoverLetter(job_id):
     print("CoverLetter clicked!")
     update_cover_letter_status("Starting cover letter generation...", job_id, False)
     
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT job_description, title, company FROM jobs WHERE id = ?", (job_id,))
-    job_tuple = cursor.fetchone()
-    if job_tuple is not None:
-        column_names = [column[0] for column in cursor.description]
-        job = dict(zip(column_names, job_tuple))
-    else:
-        conn.close()
+    job = get_job_by_id(job_id, config)
+    if job is None:
         update_cover_letter_status("Error: Job not found", job_id, True)
         return jsonify({"error": "Job not found"}), 404
     
@@ -575,7 +521,6 @@ def get_CoverLetter(job_id):
 
     # Check if resume is None
     if resume is None:
-        conn.close()
         print("Error: Resume not found or couldn't be read.")
         update_cover_letter_status("Error: Resume not found or couldn't be read.", job_id, True)
         return jsonify({"error": "Resume not found or couldn't be read."}), 400
@@ -708,7 +653,6 @@ Respond with the improved cover letter only, ensuring: (1) all information comes
     elif provider == "groq":
         groq_key = config.get("groq_api_key", "")
         if not groq_key:
-            conn.close()
             update_cover_letter_status("Error: Groq API key not configured", job_id, True)
             return jsonify({"error": "Groq API key is not configured. Please add 'groq_api_key' to config.json or get a free key from https://console.groq.com"}), 400
         print("Using Groq provider")
@@ -768,7 +712,6 @@ Respond with the improved cover letter only, ensuring: (1) all information comes
         openai_key = config.get("OpenAI_API_KEY", "")
         openai_model = config.get("OpenAI_Model", "gpt-3.5-turbo")
         if not openai_key:
-            conn.close()
             update_cover_letter_status("Error: OpenAI API key is empty", job_id, True)
             return jsonify({"error": "OpenAI API key is empty."}), 400
         print("Using OpenAI provider")
@@ -836,7 +779,6 @@ Respond with the improved cover letter only, ensuring: (1) all information comes
         update_cover_letter_status("Template-based cover letter generated!", job_id, False)
 
     if response is None:
-        conn.close()
         update_cover_letter_status(f"Error: Failed to generate cover letter using {provider} provider", job_id, True)
         return jsonify({"error": f"Failed to generate cover letter using {provider} provider."}), 500
 
@@ -845,157 +787,13 @@ Respond with the improved cover letter only, ensuring: (1) all information comes
     response = post_process_cover_letter(response)
 
     update_cover_letter_status("Saving cover letter to database...", job_id, False)
-    query = "UPDATE jobs SET cover_letter = ? WHERE id = ?"
-    print(f'Executing query: {query} with job_id: {job_id} and cover letter: {response}')
-    cursor.execute(query, (response, job_id))
-    conn.commit()
-    conn.close()
+    print(f'Updating cover letter for job_id: {job_id}')
+    update_job_field(job_id, 'cover_letter', response, config)
     
     update_cover_letter_status("Cover letter generated successfully!", job_id, True)
     return jsonify({"cover_letter": response}), 200
 
 
-def filter_jobs_by_config(jobs_list, config):
-    """Apply config filters to jobs list (for existing jobs in database)"""
-    filtered_jobs = jobs_list.copy()
-    
-    # Filter by title_exclude (case insensitive)
-    title_exclude = config.get('title_exclude', [])
-    if title_exclude and len(title_exclude) > 0:
-        title_exclude = [word.strip().lower() for word in title_exclude if word and word.strip()]
-        if title_exclude:
-            filtered_jobs = [
-                job for job in filtered_jobs 
-                if job.get('title') and not any(
-                    exclude_word in (job.get('title', '') or '').lower() 
-                    for exclude_word in title_exclude
-                )
-            ]
-    
-    # Filter by title_include (case insensitive)
-    title_include = config.get('title_include', [])
-    if title_include and len(title_include) > 0:
-        title_include = [word.strip().lower() for word in title_include if word and word.strip()]
-        if title_include:
-            filtered_jobs = [
-                job for job in filtered_jobs 
-                if job.get('title') and any(
-                    include_word in (job.get('title', '') or '').lower() 
-                    for include_word in title_include
-                )
-            ]
-    
-    # Filter by desc_words (case insensitive)
-    desc_words = config.get('desc_words', [])
-    if desc_words and len(desc_words) > 0:
-        desc_words = [word.strip().lower() for word in desc_words if word and word.strip()]
-        if desc_words:
-            filtered_jobs = [
-                job for job in filtered_jobs 
-                if job.get('job_description') and not any(
-                    desc_word in (job.get('job_description', '') or '').lower() 
-                    for desc_word in desc_words
-                )
-            ]
-    
-    # Filter by company_exclude (case insensitive)
-    company_exclude = config.get('company_exclude', [])
-    if company_exclude and len(company_exclude) > 0:
-        company_exclude = [word.strip().lower() for word in company_exclude if word and word.strip()]
-        if company_exclude:
-            filtered_jobs = [
-                job for job in filtered_jobs 
-                if job.get('company') and not any(
-                    company_word in (job.get('company', '') or '').lower() 
-                    for company_word in company_exclude
-                )
-            ]
-    
-    return filtered_jobs
-
-def read_jobs_from_db():
-    # Reload config to get latest filter settings
-    current_config = load_config('config.json')
-    
-    conn = sqlite3.connect(current_config["db_path"])
-    query = "SELECT * FROM jobs WHERE hidden = 0"
-    df = pd.read_sql_query(query, conn)
-    df = df.sort_values(by='id', ascending=False)
-    # df.reset_index(drop=True, inplace=True)
-    jobs = df.to_dict('records')
-    
-    # Apply current config filters to existing jobs
-    jobs = filter_jobs_by_config(jobs, current_config)
-    
-    return jobs
-
-def verify_db_schema():
-    conn = sqlite3.connect(config["db_path"])
-    cursor = conn.cursor()
-
-    # Get the table information
-    cursor.execute("PRAGMA table_info(jobs)")
-    table_info = cursor.fetchall()
-    column_names = [column[1] for column in table_info]
-
-    # Check if the "cover_letter" column exists
-    if "cover_letter" not in column_names:
-        # If it doesn't exist, add it
-        cursor.execute("ALTER TABLE jobs ADD COLUMN cover_letter TEXT")
-        print("Added cover_letter column to jobs table")
-
-    if "resume" not in column_names:
-        # If it doesn't exist, add it
-        cursor.execute("ALTER TABLE jobs ADD COLUMN resume TEXT")
-        print("Added resume column to jobs table")
-
-    # Check if the "source" column exists (for multi-source support)
-    if "source" not in column_names:
-        # If it doesn't exist, add it
-        cursor.execute("ALTER TABLE jobs ADD COLUMN source TEXT DEFAULT 'linkedin'")
-        print("Added source column to jobs table")
-    
-    # Check if the "saved" column exists
-    if "saved" not in column_names:
-        # If it doesn't exist, add it
-        cursor.execute("ALTER TABLE jobs ADD COLUMN saved INTEGER DEFAULT 0")
-        conn.commit()
-        print("Added saved column to jobs table")
-
-    # Create applications table if it doesn't exist
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS applications (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            job_id INTEGER,
-            company_name TEXT NOT NULL,
-            application_status TEXT DEFAULT 'Applied',
-            role TEXT NOT NULL,
-            salary TEXT,
-            date_submitted TEXT,
-            link_to_job_req TEXT,
-            rejection_reason TEXT,
-            notes TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (job_id) REFERENCES jobs(id)
-        )
-    """)
-    conn.commit()
-    print("Verified applications table exists")
-    
-    # Create analysis_history table if it doesn't exist
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS analysis_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            job_id INTEGER NOT NULL,
-            analysis_data TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (job_id) REFERENCES jobs(id)
-        )
-    """)
-    conn.commit()
-    print("Verified analysis_history table exists")
-    conn.close()
 
 # Global variable to track search status
 search_status = {"running": False, "message": "", "completed": False, "completed_at": None, "stop_requested": False}
@@ -1045,18 +843,7 @@ def application_tracker():
 def get_applications():
     """Get all applications"""
     try:
-        conn = sqlite3.connect(config["db_path"])
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, job_id, company_name, application_status, role, salary, 
-                   date_submitted, link_to_job_req, rejection_reason, notes
-            FROM applications
-            ORDER BY date_submitted DESC, id DESC
-        """)
-        
-        columns = [description[0] for description in cursor.description]
-        applications = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        conn.close()
+        applications = get_all_applications(config)
         return jsonify(applications)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1066,27 +853,7 @@ def create_application():
     """Create a new application"""
     try:
         data = request.json
-        conn = sqlite3.connect(config["db_path"])
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            INSERT INTO applications (job_id, company_name, application_status, role, salary, 
-                                     date_submitted, link_to_job_req, rejection_reason, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            data.get('job_id'),
-            data.get('company_name', ''),
-            data.get('application_status', 'Applied'),
-            data.get('role', ''),
-            data.get('salary', ''),
-            data.get('date_submitted', ''),
-            data.get('link_to_job_req', ''),
-            data.get('rejection_reason', ''),
-            data.get('notes', '')
-        ))
-        conn.commit()
-        app_id = cursor.lastrowid
-        conn.close()
+        app_id = create_application_service(data, config)
         return jsonify({"success": True, "id": app_id}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1096,30 +863,7 @@ def update_application(app_id):
     """Update an application"""
     try:
         data = request.json
-        conn = sqlite3.connect(config["db_path"])
-        cursor = conn.cursor()
-        
-        from datetime import datetime
-        cursor.execute("""
-            UPDATE applications 
-            SET company_name = ?, application_status = ?, role = ?, salary = ?,
-                date_submitted = ?, link_to_job_req = ?, rejection_reason = ?, 
-                notes = ?, updated_at = ?
-            WHERE id = ?
-        """, (
-            data.get('company_name', ''),
-            data.get('application_status', 'Applied'),
-            data.get('role', ''),
-            data.get('salary', ''),
-            data.get('date_submitted', ''),
-            data.get('link_to_job_req', ''),
-            data.get('rejection_reason', ''),
-            data.get('notes', ''),
-            datetime.now().isoformat(),
-            app_id
-        ))
-        conn.commit()
-        conn.close()
+        update_application_service(app_id, data, config)
         return jsonify({"success": True}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1128,23 +872,7 @@ def update_application(app_id):
 def delete_application(app_id):
     """Delete an application and unmark the job as applied"""
     try:
-        conn = sqlite3.connect(config["db_path"])
-        cursor = conn.cursor()
-        
-        # Get the job_id before deleting
-        cursor.execute("SELECT job_id FROM applications WHERE id = ?", (app_id,))
-        result = cursor.fetchone()
-        job_id = result[0] if result else None
-        
-        # Delete the application
-        cursor.execute("DELETE FROM applications WHERE id = ?", (app_id,))
-        
-        # Unmark the job as applied if it has a job_id
-        if job_id:
-            cursor.execute("UPDATE jobs SET applied = 0 WHERE id = ?", (job_id,))
-        
-        conn.commit()
-        conn.close()
+        job_id = delete_application_service(app_id, config)
         return jsonify({"success": True, "job_id": job_id}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1153,41 +881,7 @@ def delete_application(app_id):
 def export_applications_csv():
     """Export all applications to CSV"""
     try:
-        conn = sqlite3.connect(config["db_path"])
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT company_name, application_status, role, salary, 
-                   date_submitted, link_to_job_req, rejection_reason, notes
-            FROM applications
-            ORDER BY date_submitted DESC, id DESC
-        """)
-        
-        # Create CSV in memory
-        output = io.StringIO()
-        writer = csv.writer(output)
-        
-        # Write header
-        writer.writerow([
-            'Company Name', 'Application Status', 'Role', 'Salary',
-            'Date Submitted', 'Link to Job Req', 'Rejection Reason', 'Notes'
-        ])
-        
-        # Write data
-        for row in cursor.fetchall():
-            writer.writerow(row)
-        
-        conn.close()
-        
-        # Create response with CSV data
-        output.seek(0)
-        response = Response(
-            output.getvalue(),
-            mimetype='text/csv',
-            headers={
-                'Content-Disposition': 'attachment; filename=applications_export.csv'
-            }
-        )
-        return response
+        return export_applications_csv(config)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1840,16 +1534,11 @@ def run_full_analysis():
             return jsonify({"error": "job_id is required"}), 400
         
         # Get job description
-        conn = sqlite3.connect(config["db_path"])
-        cursor = conn.cursor()
-        cursor.execute("SELECT job_description FROM jobs WHERE id = ?", (job_id,))
-        job_row = cursor.fetchone()
-        conn.close()
-        
-        if not job_row:
+        job = get_job_by_id(job_id, config)
+        if not job:
             return jsonify({"error": "Job not found"}), 404
         
-        job_text = job_row[0]
+        job_text = job.get('job_description', '')
         results = {
             "step1": None,
             "step2": None,
@@ -1937,5 +1626,5 @@ def run_full_analysis():
 
 if __name__ == "__main__":
     import sys
-    verify_db_schema()  # Verify the DB schema before running the app
+    verify_db_schema(config)  # Verify the DB schema before running the app
     app.run(debug=True, port=5001)
