@@ -1,28 +1,64 @@
 {
-  "proxies": {
-
-  },
-  "headers": {
-
-  },
-
+  "proxies": {},
+  "headers": {},
   "OpenAI_API_KEY": "",
   "OpenAI_Model": "",
   "resume_path": "full local path to your resume in PDF format",
-
-  "search_queries": [    
-    {"keywords": "Python developer", "location": "Los Angeles", "f_WT": ""},
-    {"keywords": "Python developer", "location": "USA", "f_WT": "2"}
-
+  "search_queries": [
+    {"keywords": "Software Engineer", "location": "Ontario, Canada", "f_WT": ""},
+    {"keywords": "Developer", "location": "Ontario, Canada", "f_WT": ""},
+    {"keywords": "DevOps", "location": "Ontario, Canada", "f_WT": ""},
+    {"keywords": "SDE", "location": "Ontario, Canada", "f_WT": ""},
+    {"keywords": "SWE", "location": "Ontario, Canada", "f_WT": ""},
+    {"keywords": "Software", "location": "Ontario, Canada", "f_WT": ""},
+    {"keywords": "Data", "location": "Ontario, Canada", "f_WT": ""}
   ],
-  "desc_words": [
-    "agriculture", "farm", "food safety", "manufacture", "manufacturing", "Bilingual", "chemistry", "FDA", "ICH Guideline", "21 CFR 210",
-    "biological sciences", "clinical research", "clinical trials", "drug safety", "ISO 9001", "ISO9001", "Life Sciences", "Biotech", "safety standards", "gt.school", "degree in accounting", "degree in Finance", "ISQM", "ISQM1",
-    "QA/QC", "Electrical Engineering", "IS09001"
+  "desc_words": [],
+  "title_exclude": [
+    "intern",
+    "internship",
+    "co-op",
+    "coop",
+    "co op",
+    "senior",
+    "staff",
+    "principal",
+    "lead",
+    "architect",
+    "manager",
+    "director",
+    "vp",
+    "vice president",
+    "sr",
+    "sr.",
+    "senior software",
+    "staff software",
+    "principal software",
+    "lead software"
   ],
-  "title_exclude": ["frontend", "fron end", "game"],
-  "title_include": ["python", "developer", "backend", "BE", "engineer"],
-  "company_exclude": ["ClickJobs.io"],
+  "title_include": [
+    "Software Engineer",
+    "Software Developer",
+    "DevOps Engineer",
+    "Full Stack Developer",
+    "Full Stack Engineer",
+    "Backend Engineer",
+    "Backend Developer",
+    "SDE",
+    "SWE",
+    "Software Development Engineer",
+    "Python Developer",
+    "JavaScript Developer",
+    "React Developer",
+    "Full Stack",
+    "Backend",
+    "DevOps",
+    "Software",
+    "Data",
+    "Fullstack",
+    "Full-Stack"
+  ],
+  "company_exclude": [],
   "languages": ["en"],
   "timespan": "r84600",
   "jobs_tablename": "jobs",
@@ -31,6 +67,10 @@
   "pages_to_scrape": 10,
   "rounds": 1,
   "days_to_scrape": 10,
-  "app_table": "jobs"
-  }
-  
+  "delete_unapplied_jobs_after_days": 0,
+  "app_table": "jobs",
+  "ollama_model": "llama3.2:latest",
+  "ollama_base_url": "http://localhost:11434",
+  "cover_letter_provider": "ollama",
+  "groq_api_key": ""
+}
