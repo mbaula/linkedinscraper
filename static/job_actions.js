@@ -592,11 +592,19 @@ function copyLatexToClipboard() {
 window.onclick = function(event) {
     var modal = document.getElementById('cover-letter-modal');
     var latexModal = document.getElementById('latex-modal');
+    var analysisModal = document.getElementById('analysis-modal');
+    var analysisHistoryModal = document.getElementById('analysis-history-modal');
     if (event.target == modal) {
         closeCoverLetterFullscreen();
     }
     if (event.target == latexModal) {
         closeLatexModal();
+    }
+    if (event.target == analysisModal) {
+        closeAnalysisModal();
+    }
+    if (event.target == analysisHistoryModal) {
+        closeAnalysisHistoryModal();
     }
 }
 
@@ -615,6 +623,8 @@ function updateJobDetails(job) {
     html += '<button class="job-button" onclick="markAsInterview(' + job.id + ')">Interview</button>';
     html += '<button class="job-button" id="save-btn-' + job.id + '" onclick="toggleSaved(' + job.id + ')">' + (job.saved ? 'Unsave' : 'Save') + '</button>';
     html += '<button class="job-button" onclick="hideJob(' + job.id + ')">Hide</button>';
+    html += '<button class="job-button" onclick="openAnalysisModal(' + job.id + ')">AI Analysis</button>';
+    html += '<button class="job-button" onclick="openAnalysisHistory(' + job.id + ')">Analysis History</button>';
     html += '</div>';
     html += '<p class="job-detail">' + job.company + ', ' + job.location + '</p>';
     html += '<p class="job-detail">' + job.date + '</p>';
@@ -1138,4 +1148,566 @@ function drag(e) {
 function stopDrag() {
     document.removeEventListener('mousemove', drag);
     document.removeEventListener('mouseup', stopDrag);
+}
+
+// Ollama Pipeline Functions
+let pipelineData = {
+    jobJson: null,
+    resumeJson: null
+};
+let currentAnalysisJobId = null;
+
+async function getOllamaConfig() {
+    try {
+        const response = await fetch('/api/config');
+        const config = await response.json();
+        return {
+            base_url: config.ollama_base_url || 'http://localhost:11434',
+            model: config.ollama_model || 'llama3.2:latest'
+        };
+    } catch (error) {
+        console.error('Error fetching config:', error);
+        return {
+            base_url: 'http://localhost:11434',
+            model: 'llama3.2:latest'
+        };
+    }
+}
+
+function updatePipelineStatus(step, status, message) {
+    const statusEl = document.getElementById(`step${step}-status`);
+    if (statusEl) {
+        statusEl.className = `pipeline-status ${status}`;
+        statusEl.textContent = message;
+        statusEl.style.display = 'block';
+    }
+}
+
+function showPipelineResult(step, data) {
+    const resultEl = document.getElementById(`step${step}-result`);
+    const jsonEl = document.getElementById(`step${step}-json`);
+    if (resultEl && jsonEl) {
+        if (typeof data === 'string') {
+            // For Step 4 (improved resume), it's just text
+            jsonEl.textContent = data;
+        } else {
+            jsonEl.textContent = JSON.stringify(data, null, 2);
+        }
+        resultEl.style.display = 'block';
+        resultEl.classList.add('show');
+    }
+}
+
+async function openAnalysisModal(jobId) {
+    currentAnalysisJobId = jobId;
+    const modal = document.getElementById('analysis-modal');
+    const modalContent = document.getElementById('analysis-modal-content');
+    
+    // Reset pipeline data
+    pipelineData = {
+        jobJson: null,
+        resumeJson: null
+    };
+    
+    // Load available resumes
+    let resumeOptions = '<option value="">Loading resumes...</option>';
+    try {
+        const resumeResponse = await fetch('/api/list-resumes');
+        const resumeData = await resumeResponse.json();
+        if (resumeData.resumes && resumeData.resumes.length > 0) {
+            resumeOptions = '<option value="">Select a resume...</option>';
+            resumeData.resumes.forEach(function(resume) {
+                resumeOptions += '<option value="' + resume.path + '">' + resume.name + '</option>';
+            });
+        } else {
+            resumeOptions = '<option value="">No PDF files found in root folder</option>';
+        }
+    } catch (error) {
+        console.error('Error loading resumes:', error);
+        resumeOptions = '<option value="">Error loading resumes</option>';
+    }
+    
+    // Load Ollama models
+    let modelOptions = '<option value="">Loading models...</option>';
+    try {
+        const modelResponse = await fetch('/api/ollama/models');
+        const modelData = await modelResponse.json();
+        if (modelData.models && modelData.models.length > 0) {
+            // Get default model from config
+            const configResponse = await fetch('/api/config');
+            const config = await configResponse.json();
+            const defaultModel = config.ollama_model || modelData.models[0];
+            
+            modelOptions = '';
+            modelData.models.forEach(function(model) {
+                const selected = model === defaultModel ? ' selected' : '';
+                modelOptions += '<option value="' + model + '"' + selected + '>' + model + '</option>';
+            });
+        } else {
+            modelOptions = '<option value="">No models available</option>';
+        }
+    } catch (error) {
+        console.error('Error loading models:', error);
+        modelOptions = '<option value="">Error loading models</option>';
+    }
+    
+    // Build pipeline UI
+    let html = '<div class="ollama-pipeline-section">';
+    
+    // Resume selector and Model selector
+    html += '<div style="margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 6px;">';
+    html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">';
+    html += '<div>';
+    html += '<label style="display: block; margin-bottom: 8px; font-weight: bold; color: #333;">Select Resume:</label>';
+    html += '<select id="resume-selector" style="width: 100%; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; background-color: white;">';
+    html += resumeOptions;
+    html += '</select>';
+    html += '</div>';
+    html += '<div>';
+    html += '<label style="display: block; margin-bottom: 8px; font-weight: bold; color: #333;">Select Model:</label>';
+    html += '<select id="analysis-model-selector" style="width: 100%; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; background-color: white;">';
+    html += modelOptions;
+    html += '</select>';
+    html += '</div>';
+    html += '</div>';
+    html += '</div>';
+    
+    // Single Run Button
+    html += '<div style="text-align: center; margin-bottom: 30px;">';
+    html += '<button class="pipeline-step-button" onclick="runFullAnalysis(' + jobId + ')" id="run-full-analysis-btn" style="padding: 15px 40px; font-size: 16px; font-weight: bold;">Run Full Analysis</button>';
+    html += '</div>';
+    
+    // Verbose output area
+    html += '<div id="analysis-progress" style="margin-bottom: 20px; display: none;">';
+    html += '<h4 style="color: #4CAF50; margin-bottom: 10px;">Progress:</h4>';
+    html += '<div id="progress-messages" style="background-color: #f8f9fa; padding: 15px; border-radius: 6px; max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 13px; line-height: 1.6;">';
+    html += '</div>';
+    html += '</div>';
+    
+    // Results display
+    html += '<div id="analysis-results" style="display: none;">';
+    
+    // Step 1: Job Posting → Job JSON
+    html += '<div class="pipeline-step">';
+    html += '<div class="pipeline-step-header">';
+    html += '<span class="pipeline-step-title">Step 1: Job JSON</span>';
+    html += '</div>';
+    html += '<div class="pipeline-result" id="step1-result" style="display: none;"><pre id="step1-json"></pre></div>';
+    html += '</div>';
+    
+    // Step 2: Resume Text → Resume JSON
+    html += '<div class="pipeline-step">';
+    html += '<div class="pipeline-step-header">';
+    html += '<span class="pipeline-step-title">Step 2: Resume JSON</span>';
+    html += '</div>';
+    html += '<div class="pipeline-result" id="step2-result" style="display: none;"><pre id="step2-json"></pre></div>';
+    html += '</div>';
+    
+    // Step 3: Job JSON + Resume JSON → Match Analysis
+    html += '<div class="pipeline-step">';
+    html += '<div class="pipeline-step-header">';
+    html += '<span class="pipeline-step-title">Step 3: Match Analysis</span>';
+    html += '</div>';
+    html += '<div class="pipeline-result" id="step3-result" style="display: none;"><pre id="step3-json"></pre></div>';
+    html += '</div>';
+    
+    // Step 4: Resume Rewriter (Optional)
+    html += '<div class="pipeline-step">';
+    html += '<div class="pipeline-step-header">';
+    html += '<span class="pipeline-step-title">Step 4: Resume Improvement</span>';
+    html += '</div>';
+    html += '<div class="pipeline-result" id="step4-result" style="display: none;"><pre id="step4-json"></pre></div>';
+    html += '</div>';
+    
+    html += '</div>'; // Close analysis-results
+    html += '</div>'; // Close ollama-pipeline-section
+    
+    modalContent.innerHTML = html;
+    modal.style.display = 'block';
+}
+
+function closeAnalysisModal() {
+    const modal = document.getElementById('analysis-modal');
+    modal.style.display = 'none';
+    currentAnalysisJobId = null;
+    pipelineData = {
+        jobJson: null,
+        resumeJson: null
+    };
+}
+
+async function openAnalysisHistory(jobId) {
+    const modal = document.getElementById('analysis-history-modal');
+    const modalContent = document.getElementById('analysis-history-content');
+    
+    try {
+        // Fetch analysis history from backend
+        const response = await fetch(`/api/analysis-history/${jobId}`);
+        const data = await response.json();
+        
+        if (response.ok && data.analyses && data.analyses.length > 0) {
+            let html = '<div style="display: flex; flex-direction: column; gap: 15px;">';
+            data.analyses.forEach(function(analysis, index) {
+                html += '<div class="pipeline-step" style="border-left: 4px solid #4CAF50;">';
+                html += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">';
+                html += '<span style="font-weight: bold; color: #4CAF50;">Analysis #' + (data.analyses.length - index) + '</span>';
+                html += '<span style="color: #666; font-size: 0.9em;">' + new Date(analysis.created_at).toLocaleString() + '</span>';
+                html += '</div>';
+                html += '<div class="pipeline-result show"><pre style="max-height: 300px;">' + JSON.stringify(JSON.parse(analysis.analysis_data), null, 2) + '</pre></div>';
+                html += '</div>';
+            });
+            html += '</div>';
+            modalContent.innerHTML = html;
+        } else {
+            modalContent.innerHTML = '<p style="text-align: center; color: #666; padding: 40px;">No analysis history found for this job.</p>';
+        }
+    } catch (error) {
+        console.error('Error fetching analysis history:', error);
+        modalContent.innerHTML = '<p style="text-align: center; color: #d32f2f; padding: 40px;">Error loading analysis history: ' + error.message + '</p>';
+    }
+    
+    modal.style.display = 'block';
+}
+
+function closeAnalysisHistoryModal() {
+    const modal = document.getElementById('analysis-history-modal');
+    modal.style.display = 'none';
+}
+
+async function runStep1(jobId) {
+    try {
+        updatePipelineStatus(1, 'loading', 'Extracting job JSON...');
+        
+        // Get job description
+        const jobResponse = await fetch('/job_details/' + jobId);
+        const jobData = await jobResponse.json();
+        const jobText = jobData.job_description || '';
+        
+        if (!jobText) {
+            updatePipelineStatus(1, 'error', 'No job description found');
+            return;
+        }
+        
+        // Get Ollama config
+        const config = await getOllamaConfig();
+        
+        // Call API
+        const response = await fetch('/api/ollama/structured-job', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                job_text: jobText,
+                base_url: config.base_url,
+                model: config.model
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.job_json) {
+            pipelineData.jobJson = result.job_json;
+            updatePipelineStatus(1, 'success', 'Job JSON extracted successfully!');
+            showPipelineResult(1, result.job_json);
+            
+            // Enable Step 3 button
+            const step3Button = document.getElementById('step3-button');
+            if (step3Button) step3Button.disabled = false;
+        } else {
+            updatePipelineStatus(1, 'error', result.error || 'Failed to extract job JSON');
+        }
+    } catch (error) {
+        console.error('Error in Step 1:', error);
+        updatePipelineStatus(1, 'error', 'Error: ' + error.message);
+    }
+}
+
+async function runStep2() {
+    try {
+        updatePipelineStatus(2, 'loading', 'Extracting resume JSON...');
+        
+        // Get Ollama config
+        const config = await getOllamaConfig();
+        
+        // Call API (will use default resume path from config)
+        const response = await fetch('/api/ollama/structured-resume', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                base_url: config.base_url,
+                model: config.model
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.resume_json) {
+            pipelineData.resumeJson = result.resume_json;
+            updatePipelineStatus(2, 'success', 'Resume JSON extracted successfully!');
+            showPipelineResult(2, result.resume_json);
+            
+            // Enable Step 3 button if Step 1 is also done
+            if (pipelineData.jobJson) {
+                const step3Button = document.getElementById('step3-button');
+                if (step3Button) step3Button.disabled = false;
+            }
+            
+            // Enable Step 4 button
+            const step4Button = document.getElementById('step4-button');
+            if (step4Button) step4Button.disabled = false;
+        } else {
+            updatePipelineStatus(2, 'error', result.error || 'Failed to extract resume JSON');
+        }
+    } catch (error) {
+        console.error('Error in Step 2:', error);
+        updatePipelineStatus(2, 'error', 'Error: ' + error.message);
+    }
+}
+
+async function runStep3() {
+    try {
+        if (!pipelineData.jobJson || !pipelineData.resumeJson) {
+            updatePipelineStatus(3, 'error', 'Please run Step 1 and Step 2 first');
+            return;
+        }
+        
+        updatePipelineStatus(3, 'loading', 'Analyzing match...');
+        
+        // Get Ollama config
+        const config = await getOllamaConfig();
+        
+        // Extract keywords from JSON (if available)
+        const jobKeywords = pipelineData.jobJson.keywords || [];
+        const resumeKeywords = pipelineData.resumeJson.keywords || [];
+        
+        // Call API
+        const response = await fetch('/api/ollama/resume-analysis', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                job_json: pipelineData.jobJson,
+                resume_json: pipelineData.resumeJson,
+                job_keywords: jobKeywords,
+                resume_keywords: resumeKeywords,
+                improved_resume: '',
+                old_sim: 0.0,
+                new_sim: 0.0,
+                base_url: config.base_url,
+                model: config.model
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.analysis_json) {
+            updatePipelineStatus(3, 'success', 'Match analysis completed!');
+            showPipelineResult(3, result.analysis_json);
+            
+            // Save analysis to history
+            await saveAnalysisToHistory(currentAnalysisJobId, result.analysis_json);
+        } else {
+            updatePipelineStatus(3, 'error', result.error || 'Failed to generate analysis');
+        }
+    } catch (error) {
+        console.error('Error in Step 3:', error);
+        updatePipelineStatus(3, 'error', 'Error: ' + error.message);
+    }
+}
+
+async function runStep4() {
+    try {
+        if (!pipelineData.resumeJson) {
+            updatePipelineStatus(4, 'error', 'Please run Step 2 first');
+            return;
+        }
+        
+        updatePipelineStatus(4, 'loading', 'Improving resume...');
+        
+        // Get job description from current job
+        const jobDetailsDiv = document.getElementById('job-details');
+        const jobDescriptionEl = jobDetailsDiv?.querySelector('.job-description');
+        const jobDescription = jobDescriptionEl?.textContent || '';
+        
+        if (!jobDescription) {
+            updatePipelineStatus(4, 'error', 'No job description found');
+            return;
+        }
+        
+        // Get Ollama config
+        const config = await getOllamaConfig();
+        
+        // Extract keywords
+        const jobKeywords = pipelineData.jobJson?.keywords || [];
+        const resumeKeywords = pipelineData.resumeJson?.keywords || [];
+        
+        // Backend will load resume from resume_path in config
+        const response = await fetch('/api/ollama/resume-improvement', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                job_description: jobDescription,
+                job_keywords: jobKeywords,
+                resume: '', // Backend will load from resume_path in config
+                resume_keywords: resumeKeywords,
+                ats_recommendations: '',
+                skill_priority_text: '',
+                current_cosine_similarity: 0.0,
+                base_url: config.base_url,
+                model: config.model
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.improved_resume) {
+            updatePipelineStatus(4, 'success', 'Resume improvement completed!');
+            showPipelineResult(4, { improved_resume: result.improved_resume });
+        } else {
+            updatePipelineStatus(4, 'error', result.error || 'Failed to improve resume');
+        }
+    } catch (error) {
+        console.error('Error in Step 4:', error);
+        updatePipelineStatus(4, 'error', 'Error: ' + error.message);
+    }
+}
+
+async function saveAnalysisToHistory(jobId, analysisData) {
+    try {
+        const response = await fetch('/api/save-analysis', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                job_id: jobId,
+                analysis_data: JSON.stringify(analysisData)
+            })
+        });
+        
+        if (!response.ok) {
+            console.error('Failed to save analysis to history');
+        }
+    } catch (error) {
+        console.error('Error saving analysis to history:', error);
+    }
+}
+
+async function runFullAnalysis(jobId) {
+    const resumeSelector = document.getElementById('resume-selector');
+    const modelSelector = document.getElementById('analysis-model-selector');
+    const runButton = document.getElementById('run-full-analysis-btn');
+    const progressDiv = document.getElementById('analysis-progress');
+    const progressMessages = document.getElementById('progress-messages');
+    const resultsDiv = document.getElementById('analysis-results');
+    
+    if (!resumeSelector || !resumeSelector.value) {
+        alert('Please select a resume first');
+        return;
+    }
+    
+    if (!modelSelector || !modelSelector.value) {
+        alert('Please select a model first');
+        return;
+    }
+    
+    const resumePath = resumeSelector.value;
+    const selectedModel = modelSelector.value;
+    
+    // Disable button and show progress
+    runButton.disabled = true;
+    runButton.textContent = 'Running Analysis...';
+    progressDiv.style.display = 'block';
+    progressMessages.innerHTML = '';
+    resultsDiv.style.display = 'none';
+    
+    // Clear previous results
+    ['step1', 'step2', 'step3', 'step4'].forEach(function(step) {
+        const resultEl = document.getElementById(step + '-result');
+        const jsonEl = document.getElementById(step + '-json');
+        if (resultEl) resultEl.style.display = 'none';
+        if (jsonEl) jsonEl.textContent = '';
+    });
+    
+    try {
+        // Get Ollama config
+        const config = await getOllamaConfig();
+        
+        // Add initial message
+        addProgressMessage('Starting full analysis pipeline...');
+        addProgressMessage('Using model: ' + selectedModel);
+        addProgressMessage('Resume: ' + resumeSelector.options[resumeSelector.selectedIndex].text);
+        
+        // Call the full analysis API
+        const response = await fetch('/api/run-full-analysis', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                job_id: jobId,
+                resume_path: resumePath,
+                base_url: config.base_url,
+                model: selectedModel
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.success) {
+            // Display progress messages
+            if (result.results && result.results.messages) {
+                result.results.messages.forEach(function(msg) {
+                    addProgressMessage(msg);
+                });
+            }
+            
+            // Display results
+            if (result.results.step1) {
+                showPipelineResult(1, result.results.step1);
+            }
+            if (result.results.step2) {
+                showPipelineResult(2, result.results.step2);
+            }
+            if (result.results.step3) {
+                showPipelineResult(3, result.results.step3);
+            }
+            if (result.results.step4) {
+                showPipelineResult(4, result.results.step4);
+            }
+            
+            resultsDiv.style.display = 'block';
+            addProgressMessage('✓ Analysis complete! Results displayed below.');
+        } else {
+            addProgressMessage('✗ Error: ' + (result.error || 'Unknown error'));
+            if (result.results && result.results.messages) {
+                result.results.messages.forEach(function(msg) {
+                    addProgressMessage(msg);
+                });
+            }
+        }
+    } catch (error) {
+        console.error('Error running full analysis:', error);
+        addProgressMessage('✗ Error: ' + error.message);
+    } finally {
+        runButton.disabled = false;
+        runButton.textContent = 'Run Full Analysis';
+    }
+}
+
+function addProgressMessage(message) {
+    const progressMessages = document.getElementById('progress-messages');
+    if (progressMessages) {
+        const messageDiv = document.createElement('div');
+        messageDiv.textContent = new Date().toLocaleTimeString() + ' - ' + message;
+        messageDiv.style.marginBottom = '4px';
+        progressMessages.appendChild(messageDiv);
+        progressMessages.scrollTop = progressMessages.scrollHeight;
+    }
 }
