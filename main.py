@@ -214,23 +214,24 @@ def verify_jobs_table_schema(conn, table_name):
     except Exception as e:
         print(f"Error verifying table schema: {e}")
 
-def delete_old_unapplied_jobs(conn, config):
+def hide_old_unapplied_jobs(conn, config):
     """
-    Delete jobs that haven't been applied to within the specified number of days.
+    Hide jobs that haven't been applied to within the specified number of days.
+    Jobs are hidden (hidden = 1) instead of deleted so they can be recovered.
     
     Args:
         conn: Database connection
         config: Configuration dictionary
         
     Returns:
-        int: Number of jobs deleted
+        int: Number of jobs hidden
     """
     if conn is None:
         return 0
     
     days_threshold = config.get('delete_unapplied_jobs_after_days', 0)
     
-    # If set to 0 or not set, don't delete anything
+    # If set to 0 or not set, don't hide anything
     if days_threshold <= 0:
         return 0
     
@@ -249,7 +250,7 @@ def delete_old_unapplied_jobs(conn, config):
         # Calculate the cutoff date (as datetime object for comparison)
         cutoff_date = datetime.now() - timedelta(days=days_threshold)
         
-        # Get all unapplied and unsaved jobs with date_loaded
+        # Get all unapplied and unsaved jobs with date_loaded that are not already hidden
         # Check if saved column exists
         cursor.execute(f"PRAGMA table_info({jobs_tablename})")
         columns = [column[1] for column in cursor.fetchall()]
@@ -260,6 +261,7 @@ def delete_old_unapplied_jobs(conn, config):
                 SELECT id, date_loaded FROM {jobs_tablename}
                 WHERE applied = 0 
                 AND saved = 0
+                AND (hidden = 0 OR hidden IS NULL)
                 AND date_loaded IS NOT NULL
                 AND date_loaded != ''
             """)
@@ -267,11 +269,12 @@ def delete_old_unapplied_jobs(conn, config):
             cursor.execute(f"""
                 SELECT id, date_loaded FROM {jobs_tablename}
                 WHERE applied = 0 
+                AND (hidden = 0 OR hidden IS NULL)
                 AND date_loaded IS NOT NULL
                 AND date_loaded != ''
             """)
         
-        jobs_to_delete = []
+        jobs_to_hide = []
         for row in cursor.fetchall():
             job_id, date_loaded_str = row
             try:
@@ -291,28 +294,29 @@ def delete_old_unapplied_jobs(conn, config):
                 
                 # Check if the job is older than the threshold
                 if date_loaded < cutoff_date:
-                    jobs_to_delete.append(job_id)
+                    jobs_to_hide.append(job_id)
             except Exception as e:
                 # Skip jobs with invalid date formats
                 continue
         
-        if jobs_to_delete:
-            # Delete the jobs
-            placeholders = ','.join(['?' for _ in jobs_to_delete])
+        if jobs_to_hide:
+            # Hide the jobs instead of deleting them
+            placeholders = ','.join(['?' for _ in jobs_to_hide])
             cursor.execute(f"""
-                DELETE FROM {jobs_tablename}
+                UPDATE {jobs_tablename}
+                SET hidden = 1
                 WHERE id IN ({placeholders})
-            """, jobs_to_delete)
+            """, jobs_to_hide)
             
             conn.commit()
-            print(f"  [OK] Deleted {len(jobs_to_delete)} unapplied job(s) older than {days_threshold} days", flush=True)
-            return len(jobs_to_delete)
+            print(f"  [OK] Hidden {len(jobs_to_hide)} unapplied job(s) older than {days_threshold} days", flush=True)
+            return len(jobs_to_hide)
         else:
-            print(f"  [OK] No unapplied jobs older than {days_threshold} days to delete", flush=True)
+            print(f"  [OK] No unapplied jobs older than {days_threshold} days to hide", flush=True)
             return 0
             
     except Exception as e:
-        print(f"  [ERROR] Error deleting old unapplied jobs: {e}", flush=True)
+        print(f"  [ERROR] Error hiding old unapplied jobs: {e}", flush=True)
         return 0
 
 def main(config_file):
@@ -446,13 +450,13 @@ def main(config_file):
     else:
         print(f"\n[STEP 7/7] No new jobs found to process", flush=True)
     
-    # Cleanup old unapplied jobs if configured
+    # Cleanup old unapplied jobs if configured (hide instead of delete)
     delete_days = config.get('delete_unapplied_jobs_after_days', 0)
     if delete_days > 0 and conn is not None:
-        print(f"\n[CLEANUP] Deleting unapplied jobs older than {delete_days} days...", flush=True)
-        deleted_count = delete_old_unapplied_jobs(conn, config)
-        if deleted_count > 0:
-            print(f"  -> Cleaned up {deleted_count} old unapplied job(s)", flush=True)
+        print(f"\n[CLEANUP] Hiding unapplied jobs older than {delete_days} days...", flush=True)
+        hidden_count = hide_old_unapplied_jobs(conn, config)
+        if hidden_count > 0:
+            print(f"  -> Hidden {hidden_count} old unapplied job(s) (can be viewed via filter)", flush=True)
     
     end_time = tm.perf_counter()
     print("\n" + "=" * 80, flush=True)

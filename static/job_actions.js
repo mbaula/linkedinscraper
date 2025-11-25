@@ -14,11 +14,29 @@ document.addEventListener('DOMContentLoaded', function() {
     const sortBy = document.getElementById('sort-by');
     const filterDate = document.getElementById('filter-date');
     
+    // Check if we should show hidden jobs (from URL parameter)
+    const urlParams = new URLSearchParams(window.location.search);
+    const includeHidden = urlParams.get('include_hidden') === 'true';
+    if (includeHidden) {
+        // Pre-select hidden filter if we're showing hidden jobs
+        selectedFilters.status.push('hidden');
+        const hiddenCheckbox = document.getElementById('filter-status-hidden');
+        if (hiddenCheckbox) {
+            hiddenCheckbox.checked = true;
+        }
+        updateFilterDisplay('status');
+    }
+    
     // Check if search was completed and refresh if needed
     checkForSearchCompletion();
     
     // Populate filter dropdowns with unique values
     populateFilters();
+    
+    // Apply filters after everything is loaded (especially important if hidden filter is active)
+    setTimeout(function() {
+        applyAllFilters();
+    }, 200);
     
     // Add event listeners
     if (searchBar) {
@@ -155,7 +173,9 @@ function toggleFilter(type, value) {
     // Decode HTML entities
     const decodedValue = value.replace(/&quot;/g, '"').replace(/&#39;/g, "'");
     const index = selectedFilters[type].indexOf(decodedValue);
-    if (index > -1) {
+    const wasSelected = index > -1;
+    
+    if (wasSelected) {
         selectedFilters[type].splice(index, 1);
     } else {
         selectedFilters[type].push(decodedValue);
@@ -165,8 +185,24 @@ function toggleFilter(type, value) {
     if (type === 'status') {
         const checkbox = document.getElementById(`filter-status-${decodedValue}`);
         if (checkbox) {
-            checkbox.checked = index === -1;
+            checkbox.checked = !wasSelected;
         }
+    }
+    
+    // If hidden filter is being selected, reload page with hidden jobs
+    if (type === 'status' && decodedValue === 'hidden' && !wasSelected) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('include_hidden', 'true');
+        window.location.href = url.toString();
+        return; // Don't continue, page will reload
+    }
+    
+    // If hidden filter is being deselected and it was the only filter, reload without hidden
+    if (type === 'status' && decodedValue === 'hidden' && wasSelected && selectedFilters.status.length === 0) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('include_hidden');
+        window.location.href = url.toString();
+        return; // Don't continue, page will reload
     }
     
     updateFilterDisplay(type);
@@ -305,35 +341,44 @@ function applyAllFilters() {
             }
         }
         
-        // Apply status filter (saved, applied, interview, rejected)
+        // Apply status filter (saved, applied, interview, rejected, hidden)
+        // ALL selected statuses must match (AND logic)
         if (shouldShow && selectedFilters.status.length > 0) {
-            const jobSaved = jobItem.getAttribute('data-saved') === '1';
-            const jobApplied = jobItem.getAttribute('data-applied') === '1';
+            // Get job status attributes - check both data attributes and classes
+            const jobSaved = jobItem.getAttribute('data-saved') === '1' || jobItem.getAttribute('data-saved') === 1;
+            const jobApplied = jobItem.getAttribute('data-applied') === '1' || jobItem.getAttribute('data-applied') === 1;
             const jobInterview = jobItem.classList.contains('job-item-interview');
             const jobRejected = jobItem.classList.contains('job-item-rejected');
+            // Check data-hidden attribute (can be '1', 1, or check class)
+            const dataHidden = jobItem.getAttribute('data-hidden');
+            const jobHidden = dataHidden === '1' || dataHidden === 1 || dataHidden === 'true' || jobItem.classList.contains('job-item-hidden');
             
-            let matchesStatus = false;
+            // Check if job matches ALL selected statuses
+            let matchesAllStatuses = true;
             for (let i = 0; i < selectedFilters.status.length; i++) {
                 const status = selectedFilters.status[i];
+                let statusMatches = false;
+                
                 if (status === 'saved' && jobSaved) {
-                    matchesStatus = true;
-                    break;
+                    statusMatches = true;
+                } else if (status === 'applied' && jobApplied) {
+                    statusMatches = true;
+                } else if (status === 'interview' && jobInterview) {
+                    statusMatches = true;
+                } else if (status === 'rejected' && jobRejected) {
+                    statusMatches = true;
+                } else if (status === 'hidden' && jobHidden) {
+                    statusMatches = true;
                 }
-                if (status === 'applied' && jobApplied) {
-                    matchesStatus = true;
-                    break;
-                }
-                if (status === 'interview' && jobInterview) {
-                    matchesStatus = true;
-                    break;
-                }
-                if (status === 'rejected' && jobRejected) {
-                    matchesStatus = true;
+                
+                // If any selected status doesn't match, the job doesn't match all statuses
+                if (!statusMatches) {
+                    matchesAllStatuses = false;
                     break;
                 }
             }
             
-            if (!matchesStatus) {
+            if (!matchesAllStatuses) {
                 shouldShow = false;
             }
         }
@@ -622,7 +667,11 @@ function updateJobDetails(job) {
     html += '<button class="job-button" onclick="markAsRejected(' + job.id + ')">Rejected</button>';
     html += '<button class="job-button" onclick="markAsInterview(' + job.id + ')">Interview</button>';
     html += '<button class="job-button" id="save-btn-' + job.id + '" onclick="toggleSaved(' + job.id + ')">' + (job.saved ? 'Unsave' : 'Save') + '</button>';
-    html += '<button class="job-button" onclick="hideJob(' + job.id + ')">Hide</button>';
+    if (job.hidden == 1) {
+        html += '<button class="job-button" onclick="unhideJob(' + job.id + ')">Unhide</button>';
+    } else {
+        html += '<button class="job-button" onclick="hideJob(' + job.id + ')">Hide</button>';
+    }
     html += '<button class="job-button" onclick="openAnalysisModal(' + job.id + ')">AI Analysis</button>';
     html += '<button class="job-button" onclick="openAnalysisHistory(' + job.id + ')">Analysis History</button>';
     html += '</div>';
@@ -982,9 +1031,29 @@ function hideJob(jobId) {
         .then(data => {
             if (data.success) {
                 var jobCard = document.querySelector(`.job-item[data-job-id="${jobId}"]`);
+                if (jobCard) {
+                    // Mark as hidden
+                    jobCard.setAttribute('data-hidden', '1');
+                    jobCard.classList.add('job-item-hidden');
+                    
+                    // Add hidden badge
+                    var jobContent = jobCard.querySelector('.job-content');
+                    if (jobContent) {
+                        var title = jobContent.querySelector('h3');
+                        if (title && !title.querySelector('.hidden-badge')) {
+                            var badge = document.createElement('span');
+                            badge.className = 'hidden-badge';
+                            badge.textContent = 'Hidden';
+                            title.appendChild(badge);
+                        }
+                    }
+                    
+                    // Hide the job card visually (but keep in DOM for filtering)
+                    jobCard.classList.add('hidden');
+                }
                 
                 // Find the next sibling in the DOM that is a job-item
-                var nextJobCard = jobCard.nextElementSibling;
+                var nextJobCard = jobCard ? jobCard.nextElementSibling : null;
                 while(nextJobCard && !nextJobCard.classList.contains('job-item')) {
                     nextJobCard = nextJobCard.nextElementSibling;
                 }
@@ -993,16 +1062,44 @@ function hideJob(jobId) {
                 if (nextJobCard) {
                     var nextJobId = nextJobCard.getAttribute('data-job-id');
                     showJobDetails(nextJobId);
+                } else {
+                    // If no next job exists, clear the job details div
+                    var jobDetailsDiv = document.getElementById('job-details');
+                    if (jobDetailsDiv) {
+                        jobDetailsDiv.innerHTML = '';
+                    }
+                }
+            }
+        });
+}
+
+function unhideJob(jobId) {
+    fetch('/unhide_job/' + jobId, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                var jobCard = document.querySelector(`.job-item[data-job-id="${jobId}"]`);
+                if (jobCard) {
+                    // Remove hidden status
+                    jobCard.setAttribute('data-hidden', '0');
+                    jobCard.classList.remove('job-item-hidden');
+                    jobCard.classList.remove('hidden');
+                    
+                    // Remove hidden badge
+                    var jobContent = jobCard.querySelector('.job-content');
+                    if (jobContent) {
+                        var title = jobContent.querySelector('h3');
+                        if (title) {
+                            var hiddenBadge = title.querySelector('.hidden-badge');
+                            if (hiddenBadge) {
+                                hiddenBadge.remove();
+                            }
+                        }
+                    }
                 }
                 
-                // Hide the current job
-                jobCard.style.display = 'none'; // Or you can remove it from DOM entirely
-
-                // If no next job exists, clear the job details div
-                if (!nextJobCard) {
-                    var jobDetailsDiv = document.getElementById('job-details');
-                    jobDetailsDiv.innerHTML = '';
-                }
+                // Refresh job details to update the button
+                showJobDetails(jobId);
             }
         });
 }

@@ -16,7 +16,7 @@ def get_db_connection(config_path='config.json', config_dict=None):
     Returns:
         sqlite3.Connection: Database connection object
     """
-    if config_dict is None 
+    if config_dict is None:
         config = load_config(config_path)
     else:
         config = config_dict

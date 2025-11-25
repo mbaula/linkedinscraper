@@ -46,6 +46,13 @@ def verify_db_schema(config_dict):
             cursor.execute("ALTER TABLE jobs ADD COLUMN saved INTEGER DEFAULT 0")
             conn.commit()
             print("Added saved column to jobs table")
+        
+        # Check if the "hidden" column exists
+        if "hidden" not in column_names:
+            # If it doesn't exist, add it
+            cursor.execute("ALTER TABLE jobs ADD COLUMN hidden INTEGER DEFAULT 0")
+            conn.commit()
+            print("Added hidden column to jobs table")
 
         # Create applications table if it doesn't exist
         cursor.execute("""

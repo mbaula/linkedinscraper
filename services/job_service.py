@@ -214,12 +214,13 @@ def filter_jobs_by_config(jobs_list, config):
     return filtered_jobs
 
 
-def read_jobs_from_db(config_path='config.json'):
+def read_jobs_from_db(config_path='config.json', include_hidden=False):
     """
     Read jobs from database with filtering applied.
     
     Args:
         config_path (str): Path to configuration file
+        include_hidden (bool): If True, include hidden jobs in results
         
     Returns:
         list: List of filtered job dictionaries
@@ -229,7 +230,10 @@ def read_jobs_from_db(config_path='config.json'):
     
     conn = get_db_connection(config_dict=current_config)
     try:
-        query = "SELECT * FROM jobs WHERE hidden = 0"
+        if include_hidden:
+            query = "SELECT * FROM jobs"
+        else:
+            query = "SELECT * FROM jobs WHERE hidden = 0"
         df = pd.read_sql_query(query, conn)
         df = df.sort_values(by='id', ascending=False)
         jobs = df.to_dict('records')

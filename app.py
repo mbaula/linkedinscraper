@@ -74,12 +74,15 @@ app.config['TEMPLATES_AUTO_RELOAD'] = True
 
 @app.route('/')
 def home():
-    jobs = read_jobs_from_db()
-    return render_template('jobs.html', jobs=jobs)
+    # Check if user wants to see hidden jobs (from query parameter or default to False)
+    include_hidden = request.args.get('include_hidden', 'false').lower() == 'true'
+    jobs = read_jobs_from_db(include_hidden=include_hidden)
+    return render_template('jobs.html', jobs=jobs, include_hidden=include_hidden)
 
 @app.route('/job/<int:job_id>')
 def job(job_id):
-    jobs = read_jobs_from_db()
+    # Include hidden jobs when viewing a specific job
+    jobs = read_jobs_from_db(include_hidden=True)
     # Find job by ID in the filtered list
     job = next((j for j in jobs if j.get('id') == job_id), None)
     if job:
@@ -89,7 +92,12 @@ def job(job_id):
 
 @app.route('/get_all_jobs')
 def get_all_jobs():
-    jobs = get_all_jobs_service(config)
+    # Check if user wants to see hidden jobs
+    include_hidden = request.args.get('include_hidden', 'false').lower() == 'true'
+    if include_hidden:
+        jobs = read_jobs_from_db(include_hidden=True)
+    else:
+        jobs = get_all_jobs_service(config)
     return jsonify(jobs)
 
 @app.route('/job_details/<int:job_id>')
@@ -104,6 +112,12 @@ def job_details(job_id):
 def hide_job(job_id):
     update_job_status(job_id, 'hidden', 1, config)
     return jsonify({"success": "Job marked as hidden"}), 200
+
+@app.route('/unhide_job/<int:job_id>', methods=['POST'])
+def unhide_job(job_id):
+    """Unhide a job"""
+    update_job_status(job_id, 'hidden', 0, config)
+    return jsonify({"success": "Job unhidden"}), 200
 
 
 @app.route('/mark_applied/<int:job_id>', methods=['POST'])

@@ -88,6 +88,43 @@
             .job-item-saved {
                 background-color: #fff9c7;
             }
+            .job-item-hidden {
+                background-color: #e8e8e8;
+                opacity: 0.75;
+                position: relative;
+                border-left: 4px solid #9e9e9e;
+            }
+            .job-item-hidden::before {
+                content: "👁️‍🗨️";
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                font-size: 20px;
+                opacity: 0.7;
+                z-index: 1;
+            }
+            .job-item-hidden .job-content {
+                color: #888;
+            }
+            .job-item-hidden .job-content h3 {
+                color: #666;
+            }
+            .job-item-hidden:hover {
+                background-color: #d8d8d8;
+                opacity: 0.85;
+            }
+            .hidden-badge {
+                display: inline-block;
+                background-color: #9e9e9e;
+                color: white;
+                padding: 4px 10px;
+                border-radius: 12px;
+                font-size: 11px;
+                font-weight: bold;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-left: 8px;
+            }
             .saved-badge {
                 display: inline-block;
                 background-color: #ffc107;
@@ -653,6 +690,10 @@
                                         <input type="checkbox" id="filter-status-rejected" value="rejected" onchange="toggleFilter('status', this.value)">
                                         <label for="filter-status-rejected">Rejected</label>
                                     </div>
+                                    <div class="multi-select-option" onclick="toggleFilter('status', 'hidden')">
+                                        <input type="checkbox" id="filter-status-hidden" value="hidden" onchange="toggleFilter('status', this.value)">
+                                        <label for="filter-status-hidden">Hidden</label>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -687,7 +728,7 @@
                 
                 <div id="jobs-container">
                 {% for job in jobs %}
-                <a class="{% if job.rejected == 1 %}job-item job-item-rejected{% elif job.interview == 1 %}job-item job-item-interview{% elif job.applied == 1 %}job-item job-item-applied{% elif job.saved == 1 %}job-item job-item-saved{% else %}job-item{% endif %}"  href="#" onclick="event.preventDefault(); showJobDetails('{{ job.id }}')" data-job-id="{{ job.id }}" data-city="{{ job.location }}" data-title="{{ job.title }}" data-company="{{ job.company }}" data-date="{{ job.date }}" data-applied="{{ job.applied or 0 }}" data-saved="{{ job.saved or 0 }}">
+                <a class="{% if job.hidden == 1 %}job-item job-item-hidden{% elif job.rejected == 1 %}job-item job-item-rejected{% elif job.interview == 1 %}job-item job-item-interview{% elif job.applied == 1 %}job-item job-item-applied{% elif job.saved == 1 %}job-item job-item-saved{% else %}job-item{% endif %}"  href="#" onclick="event.preventDefault(); showJobDetails('{{ job.id }}')" data-job-id="{{ job.id }}" data-city="{{ job.location }}" data-title="{{ job.title }}" data-company="{{ job.company }}" data-date="{{ job.date }}" data-applied="{{ job.applied or 0 }}" data-saved="{{ job.saved or 0 }}" data-hidden="{{ job.hidden or 0 }}">
                     <div class="job-content">
                         <h3>
                             {{ job.title }}
@@ -696,6 +737,9 @@
                             {% endif %}
                             {% if job.saved == 1 %}
                             <span class="saved-badge">Saved</span>
+                            {% endif %}
+                            {% if job.hidden == 1 %}
+                            <span class="hidden-badge">Hidden</span>
                             {% endif %}
                         </h3>
                         <p>{{ job.company }}, {{ job.location }}</p>
