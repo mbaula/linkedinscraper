@@ -674,25 +674,25 @@
                             </div>
                             <div class="multi-select-dropdown" id="filter-status-dropdown" style="display: none;">
                                 <div class="multi-select-options" id="status-options">
-                                    <div class="multi-select-option" onclick="toggleFilter('status', 'saved')">
-                                        <input type="checkbox" id="filter-status-saved" value="saved" onchange="toggleFilter('status', this.value)">
-                                        <label for="filter-status-saved">Saved</label>
+                                    <div class="multi-select-option">
+                                        <input type="checkbox" id="filter-status-saved" value="saved" onchange="toggleFilter('status', this.value, event)">
+                                        <label for="filter-status-saved" onclick="event.preventDefault(); document.getElementById('filter-status-saved').click();">Saved</label>
                                     </div>
-                                    <div class="multi-select-option" onclick="toggleFilter('status', 'applied')">
-                                        <input type="checkbox" id="filter-status-applied" value="applied" onchange="toggleFilter('status', this.value)">
-                                        <label for="filter-status-applied">Applied</label>
+                                    <div class="multi-select-option">
+                                        <input type="checkbox" id="filter-status-applied" value="applied" onchange="toggleFilter('status', this.value, event)">
+                                        <label for="filter-status-applied" onclick="event.preventDefault(); document.getElementById('filter-status-applied').click();">Applied</label>
                                     </div>
-                                    <div class="multi-select-option" onclick="toggleFilter('status', 'interview')">
-                                        <input type="checkbox" id="filter-status-interview" value="interview" onchange="toggleFilter('status', this.value)">
-                                        <label for="filter-status-interview">Interview</label>
+                                    <div class="multi-select-option">
+                                        <input type="checkbox" id="filter-status-interview" value="interview" onchange="toggleFilter('status', this.value, event)">
+                                        <label for="filter-status-interview" onclick="event.preventDefault(); document.getElementById('filter-status-interview').click();">Interview</label>
                                     </div>
-                                    <div class="multi-select-option" onclick="toggleFilter('status', 'rejected')">
-                                        <input type="checkbox" id="filter-status-rejected" value="rejected" onchange="toggleFilter('status', this.value)">
-                                        <label for="filter-status-rejected">Rejected</label>
+                                    <div class="multi-select-option">
+                                        <input type="checkbox" id="filter-status-rejected" value="rejected" onchange="toggleFilter('status', this.value, event)">
+                                        <label for="filter-status-rejected" onclick="event.preventDefault(); document.getElementById('filter-status-rejected').click();">Rejected</label>
                                     </div>
-                                    <div class="multi-select-option" onclick="toggleFilter('status', 'hidden')">
-                                        <input type="checkbox" id="filter-status-hidden" value="hidden" onchange="toggleFilter('status', this.value)">
-                                        <label for="filter-status-hidden">Hidden</label>
+                                    <div class="multi-select-option">
+                                        <input type="checkbox" id="filter-status-hidden" value="hidden" onchange="toggleFilter('status', this.value, event)">
+                                        <label for="filter-status-hidden" onclick="event.preventDefault(); document.getElementById('filter-status-hidden').click();">Hidden</label>
                                     </div>
                                 </div>
                             </div>
@@ -728,7 +728,7 @@
                 
                 <div id="jobs-container">
                 {% for job in jobs %}
-                <a class="{% if job.hidden == 1 %}job-item job-item-hidden{% elif job.rejected == 1 %}job-item job-item-rejected{% elif job.interview == 1 %}job-item job-item-interview{% elif job.applied == 1 %}job-item job-item-applied{% elif job.saved == 1 %}job-item job-item-saved{% else %}job-item{% endif %}"  href="#" onclick="event.preventDefault(); showJobDetails('{{ job.id }}')" data-job-id="{{ job.id }}" data-city="{{ job.location }}" data-title="{{ job.title }}" data-company="{{ job.company }}" data-date="{{ job.date }}" data-applied="{{ job.applied or 0 }}" data-saved="{{ job.saved or 0 }}" data-hidden="{{ job.hidden or 0 }}">
+                <a class="job-item{% if job.hidden == 1 %} job-item-hidden{% endif %}{% if job.rejected == 1 %} job-item-rejected{% endif %}{% if job.interview == 1 %} job-item-interview{% endif %}{% if job.applied == 1 %} job-item-applied{% endif %}{% if job.saved == 1 %} job-item-saved{% endif %}"  href="#" onclick="event.preventDefault(); showJobDetails('{{ job.id }}')" data-job-id="{{ job.id }}" data-city="{{ job.location }}" data-title="{{ job.title }}" data-company="{{ job.company }}" data-date="{{ job.date }}" data-applied="{{ job.applied or 0 }}" data-saved="{{ job.saved or 0 }}" data-hidden="{{ job.hidden or 0 }}">
                     <div class="job-content">
                         <h3>
                             {{ job.title }}

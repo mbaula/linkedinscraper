@@ -17,8 +17,21 @@ document.addEventListener('DOMContentLoaded', function() {
     // Check if we should show hidden jobs (from URL parameter)
     const urlParams = new URLSearchParams(window.location.search);
     const includeHidden = urlParams.get('include_hidden') === 'true';
-    if (includeHidden) {
-        // Pre-select hidden filter if we're showing hidden jobs
+    
+    // Restore filter states from URL if they exist
+    const statusFilters = urlParams.get('status_filters');
+    if (statusFilters) {
+        selectedFilters.status = statusFilters.split(',').filter(f => f);
+        // Update checkboxes
+        selectedFilters.status.forEach(function(status) {
+            const checkbox = document.getElementById(`filter-status-${status}`);
+            if (checkbox) {
+                checkbox.checked = true;
+            }
+        });
+        updateFilterDisplay('status');
+    } else if (includeHidden) {
+        // Legacy: if include_hidden is true but no status_filters, just add hidden
         selectedFilters.status.push('hidden');
         const hiddenCheckbox = document.getElementById('filter-status-hidden');
         if (hiddenCheckbox) {
@@ -27,11 +40,47 @@ document.addEventListener('DOMContentLoaded', function() {
         updateFilterDisplay('status');
     }
     
+    // Restore other filters from URL (after populateFilters runs)
+    const cityFilters = urlParams.get('city_filters');
+    const titleFilters = urlParams.get('title_filters');
+    const companyFilters = urlParams.get('company_filters');
+    
+    // Store for later restoration after populateFilters
+    const filtersToRestore = {
+        city: cityFilters ? cityFilters.split(',').filter(f => f) : [],
+        title: titleFilters ? titleFilters.split(',').filter(f => f) : [],
+        company: companyFilters ? companyFilters.split(',').filter(f => f) : []
+    };
+    
     // Check if search was completed and refresh if needed
     checkForSearchCompletion();
     
     // Populate filter dropdowns with unique values
     populateFilters();
+    
+    // Restore filters after they're populated
+    setTimeout(function() {
+        Object.keys(filtersToRestore).forEach(function(type) {
+            if (filtersToRestore[type].length > 0) {
+                selectedFilters[type] = filtersToRestore[type];
+                // Update checkboxes
+                filtersToRestore[type].forEach(function(value) {
+                    const optionsContainer = document.getElementById(`${type}-options`);
+                    if (optionsContainer) {
+                        const checkboxes = optionsContainer.querySelectorAll('input[type="checkbox"]');
+                        for (let i = 0; i < checkboxes.length; i++) {
+                            const checkboxValue = checkboxes[i].value.replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+                            if (checkboxValue === value) {
+                                checkboxes[i].checked = true;
+                                break;
+                            }
+                        }
+                    }
+                });
+                updateFilterDisplay(type);
+            }
+        });
+    }, 300);
     
     // Apply filters after everything is loaded (especially important if hidden filter is active)
     setTimeout(function() {
@@ -124,8 +173,8 @@ function populateMultiSelect(type, options) {
         const escapedValue = option.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         
         div.innerHTML = `
-            <input type="checkbox" id="${safeId}" value="${escapedValue}" onchange="toggleFilter('${type}', this.value)">
-            <label for="${safeId}" style="cursor: pointer; flex: 1;">${option}</label>
+            <input type="checkbox" id="${safeId}" value="${escapedValue}" onchange="toggleFilter('${type}', this.value, event)">
+            <label for="${safeId}" style="cursor: pointer; flex: 1;" onclick="event.preventDefault(); document.getElementById('${safeId}').click();">${option}</label>
         `;
         optionsContainer.appendChild(div);
     });
@@ -169,40 +218,96 @@ function filterOptions(type, searchTerm) {
     });
 }
 
-function toggleFilter(type, value) {
+function toggleFilter(type, value, event) {
+    // Prevent double-firing if called from both onclick and onchange
+    if (event) {
+        event.stopPropagation();
+    }
+    
     // Decode HTML entities
     const decodedValue = value.replace(/&quot;/g, '"').replace(/&#39;/g, "'");
     const index = selectedFilters[type].indexOf(decodedValue);
     const wasSelected = index > -1;
     
-    if (wasSelected) {
-        selectedFilters[type].splice(index, 1);
+    // Get checkbox to check its current state (in case it was toggled by user click)
+    let checkbox = null;
+    if (type === 'status') {
+        checkbox = document.getElementById(`filter-status-${decodedValue}`);
     } else {
-        selectedFilters[type].push(decodedValue);
+        // For dynamically populated filters (city, title, company), find by value
+        const optionsContainer = document.getElementById(`${type}-options`);
+        if (optionsContainer) {
+            const checkboxes = optionsContainer.querySelectorAll('input[type="checkbox"]');
+            for (let i = 0; i < checkboxes.length; i++) {
+                // Decode the value to compare
+                const checkboxValue = checkboxes[i].value.replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+                if (checkboxValue === decodedValue) {
+                    checkbox = checkboxes[i];
+                    break;
+                }
+            }
+        }
     }
     
-    // Update checkbox state for status filter
-    if (type === 'status') {
-        const checkbox = document.getElementById(`filter-status-${decodedValue}`);
-        if (checkbox) {
-            checkbox.checked = !wasSelected;
+    // If checkbox exists, use its checked state as source of truth
+    if (checkbox) {
+        const isChecked = checkbox.checked;
+        if (isChecked && !wasSelected) {
+            // Checkbox is checked but not in our array - add it
+            selectedFilters[type].push(decodedValue);
+        } else if (!isChecked && wasSelected) {
+            // Checkbox is unchecked but in our array - remove it
+            selectedFilters[type].splice(index, 1);
+        }
+        // If states match, no change needed
+    } else {
+        // No checkbox, use toggle logic
+        if (wasSelected) {
+            selectedFilters[type].splice(index, 1);
+        } else {
+            selectedFilters[type].push(decodedValue);
         }
     }
     
     // If hidden filter is being selected, reload page with hidden jobs
-    if (type === 'status' && decodedValue === 'hidden' && !wasSelected) {
+    // But preserve all other filter states
+    if (type === 'status' && decodedValue === 'hidden') {
+        const isNowSelected = selectedFilters.status.includes('hidden');
         const url = new URL(window.location.href);
-        url.searchParams.set('include_hidden', 'true');
-        window.location.href = url.toString();
-        return; // Don't continue, page will reload
-    }
-    
-    // If hidden filter is being deselected and it was the only filter, reload without hidden
-    if (type === 'status' && decodedValue === 'hidden' && wasSelected && selectedFilters.status.length === 0) {
-        const url = new URL(window.location.href);
-        url.searchParams.delete('include_hidden');
-        window.location.href = url.toString();
-        return; // Don't continue, page will reload
+        
+        if (isNowSelected) {
+            // Store all current filter states in URL before reloading
+            url.searchParams.set('include_hidden', 'true');
+            // Store status filters
+            if (selectedFilters.status.length > 0) {
+                url.searchParams.set('status_filters', selectedFilters.status.join(','));
+            }
+            // Store other filters if they exist
+            if (selectedFilters.city.length > 0) {
+                url.searchParams.set('city_filters', selectedFilters.city.join(','));
+            }
+            if (selectedFilters.title.length > 0) {
+                url.searchParams.set('title_filters', selectedFilters.title.join(','));
+            }
+            if (selectedFilters.company.length > 0) {
+                url.searchParams.set('company_filters', selectedFilters.company.join(','));
+            }
+            window.location.href = url.toString();
+            return; // Don't continue, page will reload
+        } else {
+            // Deselecting hidden - check if we should reload
+            if (url.searchParams.get('include_hidden') === 'true') {
+                url.searchParams.delete('include_hidden');
+                // Preserve other filters
+                if (selectedFilters.status.length > 0) {
+                    url.searchParams.set('status_filters', selectedFilters.status.join(','));
+                } else {
+                    url.searchParams.delete('status_filters');
+                }
+                window.location.href = url.toString();
+                return; // Don't continue, page will reload
+            }
+        }
     }
     
     updateFilterDisplay(type);
@@ -342,42 +447,50 @@ function applyAllFilters() {
         }
         
         // Apply status filter (saved, applied, interview, rejected, hidden)
-        // ALL selected statuses must match (AND logic)
+        // ALL selected statuses must match (AND logic) - job must have EVERY selected status
         if (shouldShow && selectedFilters.status.length > 0) {
-            // Get job status attributes - check both data attributes and classes
-            const jobSaved = jobItem.getAttribute('data-saved') === '1' || jobItem.getAttribute('data-saved') === 1;
-            const jobApplied = jobItem.getAttribute('data-applied') === '1' || jobItem.getAttribute('data-applied') === 1;
+            // Get job status attributes - handle string, number, and float values
+            const dataSaved = jobItem.getAttribute('data-saved');
+            const jobSaved = dataSaved === '1' || dataSaved === 1 || dataSaved === '1.0' || parseFloat(dataSaved) === 1;
+            
+            const dataApplied = jobItem.getAttribute('data-applied');
+            const jobApplied = dataApplied === '1' || dataApplied === 1 || dataApplied === '1.0' || parseFloat(dataApplied) === 1;
+            
             const jobInterview = jobItem.classList.contains('job-item-interview');
             const jobRejected = jobItem.classList.contains('job-item-rejected');
-            // Check data-hidden attribute (can be '1', 1, or check class)
-            const dataHidden = jobItem.getAttribute('data-hidden');
-            const jobHidden = dataHidden === '1' || dataHidden === 1 || dataHidden === 'true' || jobItem.classList.contains('job-item-hidden');
             
-            // Check if job matches ALL selected statuses
+            // Check data-hidden attribute (can be '1', 1, 1.0, 'true', or check class)
+            const dataHidden = jobItem.getAttribute('data-hidden');
+            const jobHidden = dataHidden === '1' || dataHidden === 1 || dataHidden === '1.0' || parseFloat(dataHidden) === 1 || dataHidden === 'true' || jobItem.classList.contains('job-item-hidden');
+            
+            // Check if job matches ALL selected statuses (AND logic)
+            // A job must have EVERY selected status to be shown
             let matchesAllStatuses = true;
             for (let i = 0; i < selectedFilters.status.length; i++) {
                 const status = selectedFilters.status[i];
                 let statusMatches = false;
                 
-                if (status === 'saved' && jobSaved) {
-                    statusMatches = true;
-                } else if (status === 'applied' && jobApplied) {
-                    statusMatches = true;
-                } else if (status === 'interview' && jobInterview) {
-                    statusMatches = true;
-                } else if (status === 'rejected' && jobRejected) {
-                    statusMatches = true;
-                } else if (status === 'hidden' && jobHidden) {
-                    statusMatches = true;
+                // Check each status type
+                if (status === 'saved') {
+                    statusMatches = jobSaved;
+                } else if (status === 'applied') {
+                    statusMatches = jobApplied;
+                } else if (status === 'interview') {
+                    statusMatches = jobInterview;
+                } else if (status === 'rejected') {
+                    statusMatches = jobRejected;
+                } else if (status === 'hidden') {
+                    statusMatches = jobHidden;
                 }
                 
-                // If any selected status doesn't match, the job doesn't match all statuses
+                // If this selected status doesn't match, the job doesn't match all statuses
                 if (!statusMatches) {
                     matchesAllStatuses = false;
-                    break;
+                    break; // No need to check remaining statuses
                 }
             }
             
+            // Hide job if it doesn't match all selected statuses
             if (!matchesAllStatuses) {
                 shouldShow = false;
             }
