@@ -3,7 +3,6 @@ import pandas as pd
 import sqlite3
 import json
 import openai
-from pdfminer.high_level import extract_text
 from flask_cors import CORS
 import threading
 import subprocess
@@ -24,26 +23,20 @@ from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-def load_config(file_name):
-    # Load the config file
-    with open(file_name) as f:
-        return json.load(f)
+# Import utility functions
+from utils.config_utils import load_config
+from utils.pdf_utils import read_pdf
+from utils.text_utils import (
+    format_cover_letter_for_latex,
+    escape_xml_text,
+    normalize_dashes_for_docx,
+    post_process_cover_letter
+)
 
 config = load_config('config.json')
 app = Flask(__name__)
 CORS(app)
 app.config['TEMPLATES_AUTO_RELOAD'] = True
-
-def read_pdf(file_path):
-    try:
-        text = extract_text(file_path)
-        return text
-    except FileNotFoundError:
-        print(f"Error: The file '{file_path}' was not found.")
-        return None
-    except Exception as e:
-        print(f"An error occurred while reading the PDF: {e}")
-        return None
 
 # db = load_config('config.json')['db_path']
 # try:
@@ -382,65 +375,6 @@ def get_cover_letter_status():
     """Get current cover letter generation status"""
     return jsonify(cover_letter_status)
 
-def format_cover_letter_for_latex(cover_letter_text):
-    """
-    Format cover letter text for LaTeX insertion.
-    Extracts body paragraphs and formats them with \noindent and \vspace{1em}
-    """
-    if not cover_letter_text:
-        return ""
-    
-    # Split into paragraphs (double newlines)
-    paragraphs = cover_letter_text.split('\n\n')
-    
-    # Filter out empty paragraphs and common headers/footers
-    body_paragraphs = []
-    skip_patterns = [
-        r'^Dear\s+',
-        r'^Sincerely',
-        r'^Best regards',
-        r'^Regards',
-        r'^Thank you for considering',
-        r'^I look forward to',
-        r'^Please feel free to contact',
-        r'^Mark Baula$',
-        r'^[A-Z][a-z]+\s+[A-Z][a-z]+$',  # Name signatures
-    ]
-    
-    import re
-    for para in paragraphs:
-        para = para.strip()
-        if not para:
-            continue
-        
-        # Skip if it matches a header/footer pattern
-        should_skip = False
-        for pattern in skip_patterns:
-            if re.match(pattern, para, re.IGNORECASE):
-                should_skip = True
-                break
-        
-        if not should_skip and len(para) > 20:  # Only include substantial paragraphs
-            # Escape LaTeX special characters
-            para = para.replace('\\', '\\textbackslash{}')
-            para = para.replace('&', '\\&')
-            para = para.replace('%', '\\%')
-            para = para.replace('$', '\\$')
-            para = para.replace('#', '\\#')
-            para = para.replace('^', '\\textasciicircum{}')
-            para = para.replace('_', '\\_')
-            para = para.replace('{', '\\{')
-            para = para.replace('}', '\\}')
-            para = para.replace('~', '\\textasciitilde{}')
-            
-            body_paragraphs.append(para)
-    
-    # Format for LaTeX
-    latex_formatted = ""
-    for para in body_paragraphs:
-        latex_formatted += f"\\noindent {para} \\vspace{{1em}}\n\n"
-    
-    return latex_formatted.strip()
 
 @app.route('/api/cover-letter/latex/<int:job_id>', methods=['GET'])
 def get_cover_letter_latex(job_id):
@@ -459,55 +393,6 @@ def get_cover_letter_latex(job_id):
     
     return jsonify({"latex": latex_formatted, "full_text": cover_letter_text})
 
-def escape_xml_text(text):
-    """
-    Escape special characters for XML/HTML (used by ReportLab Paragraph).
-    Handles dashes, quotes, and other special characters properly.
-    ReportLab's Paragraph uses XML/HTML markup, so we need to escape properly.
-    """
-    if not text:
-        return ""
-    
-    # Convert all Unicode dash/hyphen variants to regular ASCII hyphens
-    # This prevents rendering issues in PDF
-    text = text.replace('\u2011', '-')  # Non-breaking hyphen (‑) U+2011
-    text = text.replace('\u2012', '-')  # Figure dash (‒) U+2012
-    text = text.replace('\u2013', '-')  # En dash (–) U+2013
-    text = text.replace('\u2014', '-')  # Em dash (—) U+2014
-    text = text.replace('\u2015', '-')  # Horizontal bar (―) U+2015
-    text = text.replace('\u2212', '-')  # Minus sign (−) U+2212
-    text = text.replace('\uFE58', '-')  # Small em dash (﹘) U+FE58
-    text = text.replace('\uFE63', '-')  # Small hyphen-minus (﹣) U+FE63
-    text = text.replace('\uFF0D', '-')  # Full-width hyphen-minus (－) U+FF0D
-    
-    # Keep regular ASCII hyphens (-) as is
-    
-    # Escape XML/HTML special characters (must escape & first!)
-    text = text.replace('&', '&amp;')
-    text = text.replace('<', '&lt;')
-    text = text.replace('>', '&gt;')
-    text = text.replace('"', '&quot;')
-    text = text.replace("'", '&apos;')
-    
-    return text
-
-def normalize_dashes_for_docx(text):
-    """Convert all Unicode dash variants to regular hyphens for DOCX"""
-    if not text:
-        return ""
-    
-    # Convert all Unicode dash/hyphen variants to regular ASCII hyphens
-    text = text.replace('\u2011', '-')  # Non-breaking hyphen (‑) U+2011
-    text = text.replace('\u2012', '-')  # Figure dash (‒) U+2012
-    text = text.replace('\u2013', '-')  # En dash (–) U+2013
-    text = text.replace('\u2014', '-')  # Em dash (—) U+2014
-    text = text.replace('\u2015', '-')  # Horizontal bar (―) U+2015
-    text = text.replace('\u2212', '-')  # Minus sign (−) U+2212
-    text = text.replace('\uFE58', '-')  # Small em dash (﹘) U+FE58
-    text = text.replace('\uFE63', '-')  # Small hyphen-minus (﹣) U+FE63
-    text = text.replace('\uFF0D', '-')  # Full-width hyphen-minus (－) U+FF0D
-    
-    return text
 
 @app.route('/api/cover-letter/docx/<int:job_id>', methods=['GET'])
 def generate_cover_letter_docx(job_id):
@@ -969,65 +854,6 @@ Respond with the improved cover letter only, ensuring: (1) all information comes
     update_cover_letter_status("Cover letter generated successfully!", job_id, True)
     return jsonify({"cover_letter": response}), 200
 
-def post_process_cover_letter(text):
-    """
-    Post-process cover letter to fix common issues:
-    - Remove all Unicode dash variants
-    - Fix percentage spacing (remove space before %)
-    - Convert bullet-point style to narrative
-    - Clean up formatting
-    """
-    if not text:
-        return text
-    
-    import re
-    
-    # Replace ALL Unicode dash/hyphen variants with regular hyphens
-    dash_replacements = {
-        '\u2011': '-',  # Non-breaking hyphen (‑)
-        '\u2012': '-',  # Figure dash (‒)
-        '\u2013': '-',  # En dash (–)
-        '\u2014': '-',  # Em dash (—)
-        '\u2015': '-',  # Horizontal bar (―)
-        '\u2212': '-',  # Minus sign (−)
-        '\uFE58': '-',  # Small em dash (﹘)
-        '\uFE63': '-',  # Small hyphen-minus (﹣)
-        '\uFF0D': '-',  # Full-width hyphen-minus (－)
-    }
-    
-    for unicode_char, replacement in dash_replacements.items():
-        text = text.replace(unicode_char, replacement)
-    
-    # Fix percentage spacing - remove space before % sign
-    # Matches patterns like "90 %", "75 %", etc. and converts to "90%", "75%"
-    text = re.sub(r'(\d+)\s+%', r'\1%', text)
-    
-    # Remove bullet points and convert to narrative
-    lines = text.split('\n')
-    cleaned_lines = []
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        
-        # Remove bullet point markers
-        if line.startswith('•') or line.startswith('-') or line.startswith('*') or line.startswith('·'):
-            line = line[1:].strip()
-        # Remove numbered lists
-        if line and line[0].isdigit() and ('.' in line[:3] or ')' in line[:3]):
-            # Remove number prefix
-            line = re.sub(r'^\d+[\.\)]\s*', '', line)
-        
-        if line:
-            cleaned_lines.append(line)
-    
-    # Join back into paragraphs
-    text = '\n\n'.join(cleaned_lines)
-    
-    # Remove excessive spacing
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    
-    return text
 
 def filter_jobs_by_config(jobs_list, config):
     """Apply config filters to jobs list (for existing jobs in database)"""
