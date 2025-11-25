@@ -1,20 +1,16 @@
 """
 Job-related routes blueprint.
 """
-from flask import Blueprint, render_template, jsonify, request
+from flask import Blueprint, render_template, jsonify, request, current_app
 from services.job_service import (
     get_all_jobs as get_all_jobs_service,
     get_job_by_id,
     update_job_status,
     read_jobs_from_db
 )
-from utils.config_utils import load_config
 
 # Create blueprint
 job_bp = Blueprint('job', __name__)
-
-# Load config (will be passed from app.py, but we can also load it here as fallback)
-config = load_config('config.json')
 
 
 @job_bp.route('/')
@@ -42,10 +38,11 @@ def job(job_id):
 @job_bp.route('/get_all_jobs')
 def get_all_jobs():
     """Get all jobs as JSON"""
+    config = current_app.config['CONFIG']
     # Check if user wants to see hidden jobs
     include_hidden = request.args.get('include_hidden', 'false').lower() == 'true'
     if include_hidden:
-        jobs = read_jobs_from_db(include_hidden=True)
+        jobs = read_jobs_from_db(include_hidden=include_hidden)
     else:
         jobs = get_all_jobs_service(config)
     return jsonify(jobs)
@@ -54,6 +51,7 @@ def get_all_jobs():
 @job_bp.route('/job_details/<int:job_id>')
 def job_details(job_id):
     """Get job details by ID"""
+    config = current_app.config['CONFIG']
     job = get_job_by_id(job_id, config)
     if job:
         return jsonify(job)
@@ -64,6 +62,7 @@ def job_details(job_id):
 @job_bp.route('/hide_job/<int:job_id>', methods=['POST'])
 def hide_job(job_id):
     """Hide a job"""
+    config = current_app.config['CONFIG']
     update_job_status(job_id, 'hidden', 1, config)
     return jsonify({"success": "Job marked as hidden"}), 200
 
@@ -71,6 +70,7 @@ def hide_job(job_id):
 @job_bp.route('/unhide_job/<int:job_id>', methods=['POST'])
 def unhide_job(job_id):
     """Unhide a job"""
+    config = current_app.config['CONFIG']
     update_job_status(job_id, 'hidden', 0, config)
     return jsonify({"success": "Job unhidden"}), 200
 
@@ -85,6 +85,7 @@ def mark_applied(job_id):
     )
     from services.job_service import get_job_details_for_application
     
+    config = current_app.config['CONFIG']
     print("Applied clicked!")
     
     # Update jobs table
@@ -117,6 +118,7 @@ def mark_applied(job_id):
 @job_bp.route('/unmark_applied/<int:job_id>', methods=['POST'])
 def unmark_applied(job_id):
     """Unmark a job as applied"""
+    config = current_app.config['CONFIG']
     update_job_status(job_id, 'applied', 0, config)
     return jsonify({"success": "Job unmarked as applied"}), 200
 
@@ -124,6 +126,7 @@ def unmark_applied(job_id):
 @job_bp.route('/mark_saved/<int:job_id>', methods=['POST'])
 def mark_saved(job_id):
     """Mark a job as saved"""
+    config = current_app.config['CONFIG']
     print("Saved clicked!")
     print(f'Updating job_id: {job_id} to saved')
     update_job_status(job_id, 'saved', 1, config)
@@ -133,6 +136,7 @@ def mark_saved(job_id):
 @job_bp.route('/unmark_saved/<int:job_id>', methods=['POST'])
 def unmark_saved(job_id):
     """Unmark a job as saved"""
+    config = current_app.config['CONFIG']
     print("Unsave clicked!")
     print(f'Updating job_id: {job_id} to unsaved')
     update_job_status(job_id, 'saved', 0, config)
@@ -142,6 +146,7 @@ def unmark_saved(job_id):
 @job_bp.route('/mark_interview/<int:job_id>', methods=['POST'])
 def mark_interview(job_id):
     """Mark a job as interview"""
+    config = current_app.config['CONFIG']
     print("Interview clicked!")
     print(f'Updating job_id: {job_id} to interview')
     update_job_status(job_id, 'interview', 1, config)
@@ -151,6 +156,7 @@ def mark_interview(job_id):
 @job_bp.route('/mark_rejected/<int:job_id>', methods=['POST'])
 def mark_rejected(job_id):
     """Mark a job as rejected"""
+    config = current_app.config['CONFIG']
     print("Rejected clicked!")
     print(f'Updating job_id: {job_id} to rejected')
     update_job_status(job_id, 'rejected', 1, config)

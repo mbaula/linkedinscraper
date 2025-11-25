@@ -1,7 +1,7 @@
 """
 Cover letter generation and export routes blueprint.
 """
-from flask import Blueprint, jsonify, Response, request
+from flask import Blueprint, jsonify, Response, request, current_app
 import requests
 import openai
 import json
@@ -16,7 +16,6 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_LEFT
 
 from services.job_service import get_job_by_id, get_job_field, update_job_field
-from utils.config_utils import load_config
 from utils.pdf_utils import read_pdf
 from utils.text_utils import (
     format_cover_letter_for_latex,
@@ -28,9 +27,6 @@ from routes.shared_state import cover_letter_status, update_cover_letter_status
 
 # Create blueprint
 cover_letter_bp = Blueprint('cover_letter', __name__)
-
-# Load config
-config = load_config('config.json')
 
 
 def call_ollama(prompt, base_url, model):
@@ -145,6 +141,7 @@ def generate_cover_letter_with_openai(prompt, api_key, model):
 
 @cover_letter_bp.route('/get_cover_letter/<int:job_id>')
 def get_cover_letter(job_id):
+    config = current_app.config['CONFIG']
     cover_letter = get_job_field(job_id, 'cover_letter', config)
     if cover_letter is not None:
         return jsonify({"cover_letter": cover_letter})
@@ -161,6 +158,7 @@ def get_cover_letter_status():
 @cover_letter_bp.route('/api/cover-letter/latex/<int:job_id>', methods=['GET'])
 def get_cover_letter_latex(job_id):
     """Get LaTeX-formatted cover letter body for insertion into LaTeX document"""
+    config = current_app.config['CONFIG']
     cover_letter_text = get_job_field(job_id, 'cover_letter', config)
     
     if not cover_letter_text:
@@ -174,6 +172,7 @@ def get_cover_letter_latex(job_id):
 @cover_letter_bp.route('/api/cover-letter/docx/<int:job_id>', methods=['GET'])
 def generate_cover_letter_docx(job_id):
     """Generate DOCX of cover letter"""
+    config = current_app.config['CONFIG']
     job = get_job_by_id(job_id, config)
     
     if not job or not job.get('cover_letter'):
@@ -229,6 +228,7 @@ def generate_cover_letter_docx(job_id):
 @cover_letter_bp.route('/api/cover-letter/pdf/<int:job_id>', methods=['GET'])
 def generate_cover_letter_pdf(job_id):
     """Generate PDF of cover letter"""
+    config = current_app.config['CONFIG']
     job = get_job_by_id(job_id, config)
     
     if not job or not job.get('cover_letter'):
@@ -301,7 +301,7 @@ def generate_cover_letter_pdf(job_id):
 
 @cover_letter_bp.route('/get_CoverLetter/<int:job_id>', methods=['POST'])
 def get_CoverLetter(job_id):
-    global config
+    config = current_app.config['CONFIG']
     
     if cover_letter_status["running"]:
         return jsonify({"error": "Cover letter generation is already in progress"}), 400
@@ -332,13 +332,15 @@ def get_CoverLetter(job_id):
     # Save selected model to config if provided (for Ollama)
     if selected_model and provider == "ollama":
         try:
+            from utils.config_utils import load_config
             with open('config.json', 'r') as f:
                 current_config = json.load(f)
             current_config['ollama_model'] = selected_model
             with open('config.json', 'w') as f:
                 json.dump(current_config, f, indent=4)
-            # Reload global config
-            config = load_config('config.json')
+            # Reload config in app context
+            current_app.config['CONFIG'] = load_config('config.json')
+            config = current_app.config['CONFIG']
             print(f"Saved Ollama model to config: {selected_model}")
         except Exception as e:
             print(f"Error saving model to config: {e}")

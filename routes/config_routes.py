@@ -1,9 +1,8 @@
 """
 Configuration routes blueprint.
 """
-from flask import Blueprint, render_template, jsonify, request
+from flask import Blueprint, render_template, jsonify, request, current_app
 import json
-from utils.config_utils import load_config
 
 # Create blueprint
 config_bp = Blueprint('config', __name__)
@@ -33,9 +32,9 @@ def update_config():
         new_config = request.json
         with open('config.json', 'w') as f:
             json.dump(new_config, f, indent=4)
-        # Reload config
-        from app import config as app_config
-        app_config.update(new_config)
+        # Reload config in app context
+        from utils.config_utils import load_config
+        current_app.config['CONFIG'] = load_config('config.json')
         return jsonify({"success": True, "message": "Configuration updated successfully"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500

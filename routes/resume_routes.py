@@ -1,22 +1,19 @@
 """
 Resume-related routes blueprint.
 """
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, current_app
 import openai
 from services.job_service import get_job_by_id, update_job_field
-from utils.config_utils import load_config
 from utils.pdf_utils import read_pdf
 
 # Create blueprint
 resume_bp = Blueprint('resume', __name__)
 
-# Load config
-config = load_config('config.json')
-
 
 @resume_bp.route('/get_resume/<int:job_id>', methods=['POST'])
 def get_resume(job_id):
     """Generate tailored resume for a job"""
+    config = current_app.config['CONFIG']
     print("Resume clicked!")
     job = get_job_by_id(job_id, config)
     if job is None:

@@ -1,21 +1,17 @@
 """
 Ollama API routes blueprint.
 """
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, current_app
 import json
 import re
 import os
 import glob
 import sqlite3
 from services.job_service import get_job_by_id
-from utils.config_utils import load_config
 from utils.pdf_utils import read_pdf
 
 # Create blueprint
 ollama_bp = Blueprint('ollama', __name__)
-
-# Load config
-config = load_config('config.json')
 
 
 # JSON Schemas
@@ -346,6 +342,7 @@ NOTE: ONLY OUTPUT THE IMPROVED UPDATED RESUME IN MARKDOWN FORMAT."""
 @ollama_bp.route('/api/ollama/models', methods=['GET'])
 def get_ollama_models():
     """Fetch available Ollama models"""
+    config = current_app.config['CONFIG']
     try:
         import requests
         ollama_url = config.get("ollama_base_url", "http://localhost:11434")
@@ -363,6 +360,7 @@ def get_ollama_models():
 @ollama_bp.route('/api/ollama/structured-job', methods=['POST'])
 def api_structured_job():
     """API endpoint for STEP 1: Job Posting → Job JSON"""
+    config = current_app.config['CONFIG']
     try:
         data = request.get_json()
         raw_job_text = data.get('job_text', '')
@@ -385,6 +383,7 @@ def api_structured_job():
 @ollama_bp.route('/api/ollama/structured-resume', methods=['POST'])
 def api_structured_resume():
     """API endpoint for STEP 2: Resume Text → Resume JSON"""
+    config = current_app.config['CONFIG']
     try:
         data = request.get_json()
         resume_text = data.get('resume_text', '')
@@ -420,6 +419,7 @@ def api_structured_resume():
 @ollama_bp.route('/api/ollama/resume-analysis', methods=['POST'])
 def api_resume_analysis():
     """API endpoint for STEP 3: Job JSON + Resume JSON → Match Analysis JSON"""
+    config = current_app.config['CONFIG']
     try:
         data = request.get_json()
         job_json = data.get('job_json', {})
@@ -452,6 +452,7 @@ def api_resume_analysis():
 @ollama_bp.route('/api/ollama/resume-improvement', methods=['POST'])
 def api_resume_improvement():
     """API endpoint for STEP 4: Resume Rewriter"""
+    config = current_app.config['CONFIG']
     try:
         data = request.get_json()
         raw_job_description = data.get('job_description', '')
@@ -500,6 +501,7 @@ def api_resume_improvement():
 @ollama_bp.route('/api/save-analysis', methods=['POST'])
 def save_analysis():
     """API endpoint to save analysis to history"""
+    config = current_app.config['CONFIG']
     try:
         data = request.get_json()
         job_id = data.get('job_id')
@@ -526,6 +528,7 @@ def save_analysis():
 @ollama_bp.route('/api/analysis-history/<int:job_id>', methods=['GET'])
 def get_analysis_history(job_id):
     """API endpoint to get analysis history for a job"""
+    config = current_app.config['CONFIG']
     try:
         conn = sqlite3.connect(config["db_path"])
         cursor = conn.cursor()
@@ -554,6 +557,7 @@ def get_analysis_history(job_id):
 @ollama_bp.route('/api/list-resumes', methods=['GET'])
 def list_resumes():
     """API endpoint to list all PDF files in the root folder"""
+    config = current_app.config['CONFIG']
     try:
         root_dir = os.path.dirname(os.path.abspath(__file__))
         root_dir = os.path.dirname(root_dir)  # Go up from routes/ to project root
@@ -585,6 +589,7 @@ def list_resumes():
 @ollama_bp.route('/api/run-full-analysis', methods=['POST'])
 def run_full_analysis():
     """API endpoint to run all analysis steps sequentially"""
+    config = current_app.config['CONFIG']
     try:
         data = request.get_json()
         job_id = data.get('job_id')
