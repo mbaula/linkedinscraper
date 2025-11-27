@@ -5,6 +5,7 @@ let selectedFilters = {
     city: [],
     title: [],
     company: [],
+    country: [],
     status: []
 };
 
@@ -44,12 +45,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const cityFilters = urlParams.get('city_filters');
     const titleFilters = urlParams.get('title_filters');
     const companyFilters = urlParams.get('company_filters');
+    const countryFilters = urlParams.get('country_filters');
     
     // Store for later restoration after populateFilters
     const filtersToRestore = {
         city: cityFilters ? cityFilters.split(',').filter(f => f) : [],
         title: titleFilters ? titleFilters.split(',').filter(f => f) : [],
-        company: companyFilters ? companyFilters.split(',').filter(f => f) : []
+        company: companyFilters ? companyFilters.split(',').filter(f => f) : [],
+        country: countryFilters ? countryFilters.split(',').filter(f => f) : []
     };
     
     // Check if search was completed and refresh if needed
@@ -80,6 +83,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 updateFilterDisplay(type);
             }
         });
+        
     }, 300);
     
     // Apply filters after everything is loaded (especially important if hidden filter is active)
@@ -136,20 +140,105 @@ function checkForSearchCompletion() {
     }
 }
 
+function extractCountry(location) {
+    // Extract country from location string
+    if (!location) return '';
+    
+    const locationLower = location.toLowerCase();
+    
+    // Handle special cases for metropolitan areas and regions
+    if (locationLower.includes('greater montreal') || locationLower.includes('montreal')) {
+        return 'Canada';
+    }
+    if (locationLower.includes('greater vancouver') || locationLower.includes('vancouver')) {
+        return 'Canada';
+    }
+    if (locationLower.includes('greater toronto') || locationLower.includes('gta')) {
+        return 'Canada';
+    }
+    
+    const parts = location.split(',').map(p => p.trim());
+    if (parts.length === 0) return '';
+    
+    // US state abbreviations (2 letters)
+    const usStates = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 
+                      'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 
+                      'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 
+                      'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 
+                      'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'];
+    
+    // Canadian provinces (2 letters and full names)
+    const canadianProvinces = ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
+    const canadianProvinceNames = ['ontario', 'quebec', 'british columbia', 'alberta', 'manitoba', 
+                                   'saskatchewan', 'nova scotia', 'new brunswick', 'newfoundland', 
+                                   'prince edward island', 'northwest territories', 'yukon', 'nunavut'];
+    
+    // Check each part for state/province abbreviations or names
+    for (let i = parts.length - 1; i >= 0; i--) {
+        const part = parts[i].toUpperCase();
+        const partLower = parts[i].toLowerCase();
+        
+        if (usStates.includes(part)) {
+            return 'United States';
+        } else if (canadianProvinces.includes(part) || canadianProvinceNames.some(name => partLower.includes(name))) {
+            return 'Canada';
+        }
+    }
+    
+    // If no state/province found, check the last part
+    const lastPart = parts[parts.length - 1];
+    const lastPartLower = lastPart.toLowerCase();
+    
+    // Common country names that might appear
+    if (lastPartLower.includes('united states') || lastPartLower.includes('usa') || lastPartLower === 'us') {
+        return 'United States';
+    } else if (lastPartLower.includes('canada')) {
+        return 'Canada';
+    } else if (lastPartLower.includes('united kingdom') || lastPartLower === 'uk') {
+        return 'United Kingdom';
+    } else if (lastPartLower.includes('australia')) {
+        return 'Australia';
+    } else if (lastPartLower.includes('germany')) {
+        return 'Germany';
+    } else if (lastPartLower.includes('france')) {
+        return 'France';
+    } else if (lastPartLower.includes('india')) {
+        return 'India';
+    } else if (lastPartLower.includes('china')) {
+        return 'China';
+    } else if (lastPartLower.includes('japan')) {
+        return 'Japan';
+    }
+    
+    // If 2+ parts and last part doesn't match known patterns, assume it's the country
+    if (parts.length >= 2) {
+        return lastPart;
+    }
+    
+    // Single part - return as-is (might be city or country)
+    return parts[0];
+}
+
 function populateFilters() {
     const jobItems = document.querySelectorAll('.job-item');
     const cities = new Set();
     const titles = new Set();
     const companies = new Set();
+    const countries = new Set();
     
     jobItems.forEach(function(jobItem) {
         const city = jobItem.getAttribute('data-city');
         const title = jobItem.getAttribute('data-title');
         const company = jobItem.getAttribute('data-company');
+        const location = jobItem.getAttribute('data-city'); // location is stored in data-city
         
         if (city) cities.add(city);
         if (title) titles.add(title);
         if (company) companies.add(company);
+        
+        // Extract country from location
+        const country = extractCountry(location);
+        if (country) countries.add(country);
     });
     
     // Populate city filter
@@ -160,6 +249,9 @@ function populateFilters() {
     
     // Populate company filter
     populateMultiSelect('company', Array.from(companies).sort());
+    
+    // Populate country filter
+    populateMultiSelect('country', Array.from(countries).sort());
 }
 
 function populateMultiSelect(type, options) {
@@ -179,6 +271,7 @@ function populateMultiSelect(type, options) {
         optionsContainer.appendChild(div);
     });
 }
+
 
 function toggleMultiSelect(type) {
     const dropdown = document.getElementById(`filter-${type}-dropdown`);
@@ -234,7 +327,7 @@ function toggleFilter(type, value, event) {
     if (type === 'status') {
         checkbox = document.getElementById(`filter-status-${decodedValue}`);
     } else {
-        // For dynamically populated filters (city, title, company), find by value
+        // For dynamically populated filters (city, title, company, country), find by value
         const optionsContainer = document.getElementById(`${type}-options`);
         if (optionsContainer) {
             const checkboxes = optionsContainer.querySelectorAll('input[type="checkbox"]');
@@ -292,6 +385,9 @@ function toggleFilter(type, value, event) {
             if (selectedFilters.company.length > 0) {
                 url.searchParams.set('company_filters', selectedFilters.company.join(','));
             }
+            if (selectedFilters.country.length > 0) {
+                url.searchParams.set('country_filters', selectedFilters.country.join(','));
+            }
             window.location.href = url.toString();
             return; // Don't continue, page will reload
         } else {
@@ -327,6 +423,8 @@ function updateFilterDisplay(type) {
             countElement.textContent = 'All Job Titles';
         } else if (type === 'company') {
             countElement.textContent = 'All Companies';
+        } else if (type === 'country') {
+            countElement.textContent = 'All Countries';
         } else if (type === 'status') {
             countElement.textContent = 'All Status';
         }
@@ -442,6 +540,16 @@ function applyAllFilters() {
             const jobCompany = (jobItem.getAttribute('data-company') || '').toLowerCase();
             const selectedCompaniesLower = selectedFilters.company.map(c => c.toLowerCase());
             if (!selectedCompaniesLower.includes(jobCompany)) {
+                shouldShow = false;
+            }
+        }
+        
+        // Apply country filter (multiple selection) - case insensitive
+        if (shouldShow && selectedFilters.country.length > 0) {
+            const jobLocation = jobItem.getAttribute('data-city') || '';
+            const jobCountry = extractCountry(jobLocation).toLowerCase();
+            const selectedCountriesLower = selectedFilters.country.map(c => c.toLowerCase());
+            if (!selectedCountriesLower.includes(jobCountry)) {
                 shouldShow = false;
             }
         }
