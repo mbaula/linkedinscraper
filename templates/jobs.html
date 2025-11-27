@@ -666,6 +666,19 @@
                         </div>
                     </div>
                     <div class="multi-select-wrapper" style="flex: 1; min-width: 200px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #4CAF50; font-size: 12px;">Country</label>
+                        <div class="multi-select" id="filter-country-multi">
+                            <div class="multi-select-display" onclick="toggleMultiSelect('country')">
+                                <span class="selected-count" id="country-count">All Countries</span>
+                                <span class="dropdown-arrow">▼</span>
+                            </div>
+                            <div class="multi-select-dropdown" id="filter-country-dropdown" style="display: none;">
+                                <input type="text" class="multi-select-search" placeholder="Search countries..." id="country-search" onkeyup="filterOptions('country', this.value)">
+                                <div class="multi-select-options" id="country-options"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="multi-select-wrapper" style="flex: 1; min-width: 200px;">
                         <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #4CAF50; font-size: 12px;">Status</label>
                         <div class="multi-select" id="filter-status-multi">
                             <div class="multi-select-display" onclick="toggleMultiSelect('status')">
