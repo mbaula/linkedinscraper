@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import sys
+import io
 from sqlite3 import Error
 import time as tm
 from itertools import groupby
@@ -9,6 +10,14 @@ import pandas as pd
 from langdetect import detect
 from langdetect.lang_detect_exception import LangDetectException
 from scrapers.linkedin_scraper import LinkedInScraper
+
+# Set UTF-8 encoding for stdout on Windows to handle Unicode characters
+if sys.platform == 'win32':
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    except AttributeError:
+        # If stdout.buffer doesn't exist, fall back to safe_print
+        pass
 
 
 def load_config(file_name):
@@ -24,6 +33,15 @@ def safe_detect(text):
         return detect(text)
     except LangDetectException:
         return 'en'
+
+def safe_print(text, end='\n', flush=False):
+    """Safely print text, handling Unicode encoding errors on Windows."""
+    try:
+        print(text, end=end, flush=flush)
+    except UnicodeEncodeError:
+        # Replace problematic characters with safe alternatives
+        safe_text = text.encode('ascii', 'replace').decode('ascii')
+        print(safe_text, end=end, flush=flush)
 
 def remove_irrelevant_jobs(joblist, config):
     #Filter out jobs based on description, title, and language. Set up in config.json.
@@ -346,8 +364,13 @@ def main(config_file):
     print(f"\n[STEP 3/7] Scraping job cards from search results...", flush=True)
     print(f"  This step may take a while based on the number of pages and search queries.", flush=True)
     #Scrape search results page and get job cards. This step might take a while based on the number of pages and search queries.
-    all_jobs = get_jobcards(config)
-    print(f"[OK] Job card scraping completed", flush=True)
+    try:
+        all_jobs = get_jobcards(config)
+        print(f"[OK] Job card scraping completed", flush=True)
+    except Exception as e:
+        safe_print(f"[ERROR] Failed to scrape job cards: {str(e)}", flush=True)
+        safe_print(f"[ERROR] Search cannot continue without job cards. Exiting.", flush=True)
+        return
     
     print(f"\n[STEP 4/7] Connecting to database...", flush=True)
     conn = create_connection(config)
@@ -375,78 +398,126 @@ def main(config_file):
         
         processed_count = 0
         skipped_count = 0
+        error_count = 0
         
         for idx, job in enumerate(all_jobs, 1):
-            # Skip jobs with invalid dates
-            if not job.get('date'):
-                skipped_count += 1
-                continue
+            try:
+                # Skip jobs with invalid dates
+                if not job.get('date'):
+                    skipped_count += 1
+                    continue
+                    
+                job_date = convert_date_format(job['date'])
+                if not job_date:
+                    skipped_count += 1
+                    continue
+                    
+                job_date = datetime.combine(job_date, time())
+                #if job is older than a week, skip it
+                if job_date < datetime.now() - timedelta(days=config['days_to_scrape']):
+                    skipped_count += 1
+                    continue
                 
-            job_date = convert_date_format(job['date'])
-            if not job_date:
-                skipped_count += 1
-                continue
+                safe_print(f"  [{idx}/{len(all_jobs)}] Processing: {job['title']} at {job['company']}", flush=True)
+                safe_print(f"      URL: {job['job_url']}", flush=True)
                 
-            job_date = datetime.combine(job_date, time())
-            #if job is older than a week, skip it
-            if job_date < datetime.now() - timedelta(days=config['days_to_scrape']):
-                skipped_count += 1
+                # Get job description using the scraper
+                safe_print(f"      -> Fetching job description...", flush=True)
+                try:
+                    job['job_description'] = linkedin_scraper.get_job_description(job['job_url'])
+                except Exception as e:
+                    safe_print(f"      [ERROR] Failed to fetch job description: {str(e)}", flush=True)
+                    error_count += 1
+                    continue
+                
+                # Validate job description was fetched
+                if not job.get('job_description') or job['job_description'] == "Could not fetch job description":
+                    safe_print(f"      [WARNING] Job description not available, skipping...", flush=True)
+                    skipped_count += 1
+                    continue
+                
+                try:
+                    language = safe_detect(job['job_description'])
+                    if language not in config['languages']:
+                        safe_print(f"      [WARNING] Job description language not supported: {language}", flush=True)
+                        #continue
+                except Exception as e:
+                    safe_print(f"      [WARNING] Could not detect language: {str(e)}", flush=True)
+                    # Continue anyway, language detection is not critical
+                
+                job_list.append(job)
+                processed_count += 1
+                
+            except Exception as e:
+                # Catch any other unexpected errors and continue with next job
+                safe_print(f"  [{idx}/{len(all_jobs)}] [ERROR] Failed to process job: {str(e)}", flush=True)
+                safe_print(f"      URL: {job.get('job_url', 'Unknown')}", flush=True)
+                error_count += 1
                 continue
-            
-            print(f"  [{idx}/{len(all_jobs)}] Processing: {job['title']} at {job['company']}", flush=True)
-            print(f"      URL: {job['job_url']}", flush=True)
-            
-            # Get job description using the scraper
-            print(f"      -> Fetching job description...", flush=True)
-            job['job_description'] = linkedin_scraper.get_job_description(job['job_url'])
-            language = safe_detect(job['job_description'])
-            if language not in config['languages']:
-                print(f"      [WARNING] Job description language not supported: {language}", flush=True)
-                #continue
-            job_list.append(job)
-            processed_count += 1
         
         print(f"\n  [OK] Job processing completed", flush=True)
         print(f"    - Processed: {processed_count}", flush=True)
         print(f"    - Skipped: {skipped_count}", flush=True)
+        if error_count > 0:
+            print(f"    - Errors: {error_count}", flush=True)
         
         #Final check - removing jobs based on job description keywords words from the config file
         print(f"\n  -> Applying final filters based on job description keywords...", flush=True)
-        jobs_to_add = remove_irrelevant_jobs(job_list, config)
-        print(f"  [OK] Final filtering completed", flush=True)
-        print(f"    - Total jobs to add to database: {len(jobs_to_add)}", flush=True)
-        print(f"    - Jobs filtered out: {len(job_list) - len(jobs_to_add)}", flush=True)
+        try:
+            jobs_to_add = remove_irrelevant_jobs(job_list, config)
+            print(f"  [OK] Final filtering completed", flush=True)
+            print(f"    - Total jobs to add to database: {len(jobs_to_add)}", flush=True)
+            print(f"    - Jobs filtered out: {len(job_list) - len(jobs_to_add)}", flush=True)
+        except Exception as e:
+            safe_print(f"  [ERROR] Failed to apply final filters: {str(e)}", flush=True)
+            safe_print(f"  [WARNING] Continuing with all processed jobs...", flush=True)
+            jobs_to_add = job_list
         
         #Create a list for jobs removed based on job description keywords - they will be added to the filtered_jobs table
-        filtered_list = [job for job in job_list if job not in jobs_to_add]
-        df = pd.DataFrame(jobs_to_add)
-        df_filtered = pd.DataFrame(filtered_list)
-        df['date_loaded'] = datetime.now()
-        df_filtered['date_loaded'] = datetime.now()
-        df['date_loaded'] = df['date_loaded'].astype(str)
-        df_filtered['date_loaded'] = df_filtered['date_loaded'].astype(str)        
+        try:
+            filtered_list = [job for job in job_list if job not in jobs_to_add]
+            df = pd.DataFrame(jobs_to_add)
+            df_filtered = pd.DataFrame(filtered_list)
+            df['date_loaded'] = datetime.now()
+            df_filtered['date_loaded'] = datetime.now()
+            df['date_loaded'] = df['date_loaded'].astype(str)
+            df_filtered['date_loaded'] = df_filtered['date_loaded'].astype(str)
+        except Exception as e:
+            safe_print(f"  [ERROR] Failed to create dataframes: {str(e)}", flush=True)
+            safe_print(f"  [WARNING] Skipping database and CSV export...", flush=True)
+            df = None
+            df_filtered = None
         
-        if conn is not None:
+        if df is not None and conn is not None:
             print(f"\n  -> Saving jobs to database...", flush=True)
-            #Update or Create the database table for the job list
-            if table_exists(conn, jobs_tablename):
-                update_table(conn, df, jobs_tablename)
-            else:
-                create_table(conn, df, jobs_tablename)
-                
-            #Update or Create the database table for the filtered out jobs
-            if table_exists(conn, filtered_jobs_tablename):
-                update_table(conn, df_filtered, filtered_jobs_tablename)
-            else:
-                create_table(conn, df_filtered, filtered_jobs_tablename)
-            print(f"  [OK] Database updated successfully", flush=True)
-        else:
-            print("  [ERROR] Cannot create the database connection.", flush=True)
+            try:
+                #Update or Create the database table for the job list
+                if table_exists(conn, jobs_tablename):
+                    update_table(conn, df, jobs_tablename)
+                else:
+                    create_table(conn, df, jobs_tablename)
+                    
+                #Update or Create the database table for the filtered out jobs
+                if table_exists(conn, filtered_jobs_tablename):
+                    update_table(conn, df_filtered, filtered_jobs_tablename)
+                else:
+                    create_table(conn, df_filtered, filtered_jobs_tablename)
+                print(f"  [OK] Database updated successfully", flush=True)
+            except Exception as e:
+                safe_print(f"  [ERROR] Failed to save jobs to database: {str(e)}", flush=True)
+                safe_print(f"  [WARNING] Continuing with CSV export...", flush=True)
+        elif conn is None:
+            print("  [WARNING] Database connection not available, skipping database save.", flush=True)
         
-        print(f"\n  -> Exporting to CSV files...", flush=True)
-        df.to_csv('linkedin_jobs.csv', index=False, encoding='utf-8')
-        df_filtered.to_csv('linkedin_jobs_filtered.csv', index=False, encoding='utf-8')
-        print(f"  [OK] CSV files exported", flush=True)
+        if df is not None:
+            print(f"\n  -> Exporting to CSV files...", flush=True)
+            try:
+                df.to_csv('linkedin_jobs.csv', index=False, encoding='utf-8')
+                df_filtered.to_csv('linkedin_jobs_filtered.csv', index=False, encoding='utf-8')
+                print(f"  [OK] CSV files exported", flush=True)
+            except Exception as e:
+                safe_print(f"  [ERROR] Failed to export CSV files: {str(e)}", flush=True)
+                safe_print(f"  [WARNING] Jobs were processed but not exported to CSV.", flush=True)
     else:
         print(f"\n[STEP 7/7] No new jobs found to process", flush=True)
     
