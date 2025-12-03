@@ -233,6 +233,69 @@ def set_job_cache(job_description, job_json, config):
         print(f"Error caching job: {e}")
 
 
+def get_keyword_analysis_cache(job_description, resume_path, config):
+    """
+    Get cached keyword analysis if it exists.
+    Returns analysis_json if cache is valid, None otherwise.
+    Uses composite key: job_description_hash + resume_path_hash
+    """
+    if not job_description or not resume_path:
+        return None
+    
+    try:
+        # Create hashes
+        job_hash = hashlib.md5(job_description.encode('utf-8')).hexdigest()
+        resume_hash = hashlib.md5(resume_path.encode('utf-8')).hexdigest()
+        # Composite cache key
+        cache_key = f"{job_hash}_{resume_hash}"
+        
+        conn = sqlite3.connect(config["db_path"])
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT analysis_json FROM keyword_analysis_cache WHERE cache_key = ?",
+            (cache_key,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return json.loads(row[0])
+        
+        return None
+    except Exception as e:
+        print(f"Error checking keyword analysis cache: {e}")
+        return None
+
+
+def set_keyword_analysis_cache(job_description, resume_path, analysis_json, config):
+    """
+    Store keyword analysis in cache.
+    Uses composite key: job_description_hash + resume_path_hash
+    """
+    if not job_description or not resume_path or not analysis_json:
+        return
+    
+    try:
+        # Create hashes
+        job_hash = hashlib.md5(job_description.encode('utf-8')).hexdigest()
+        resume_hash = hashlib.md5(resume_path.encode('utf-8')).hexdigest()
+        # Composite cache key
+        cache_key = f"{job_hash}_{resume_hash}"
+        
+        conn = sqlite3.connect(config["db_path"])
+        cursor = conn.cursor()
+        cursor.execute(
+            """INSERT OR REPLACE INTO keyword_analysis_cache 
+               (cache_key, job_description_hash, resume_path_hash, analysis_json, updated_at) 
+               VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)""",
+            (cache_key, job_hash, resume_hash, json.dumps(analysis_json))
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error caching keyword analysis: {e}")
+
+
 def is_soft_skill(keyword):
     """
     Check if a keyword is a soft skill or generic phrase that should be excluded.
@@ -1281,14 +1344,7 @@ def run_full_analysis():
         step3_start = time.time()
         results["messages"].append("Starting Step 3: Performing Keyword Analysis...")
         
-        # CRITICAL: Double-check types before any .get() calls
-        if not isinstance(job_json, dict):
-            print(f"CRITICAL ERROR: job_json is not a dict at Step 3 start, type: {type(job_json)}, value: {str(job_json)[:200]}")
-            return jsonify({"error": "Step 3 failed: Invalid job JSON format", "results": results}), 500
-        if not isinstance(resume_json, dict):
-            print(f"CRITICAL ERROR: resume_json is not a dict at Step 3 start, type: {type(resume_json)}, value: {str(resume_json)[:200]}")
-            return jsonify({"error": "Step 3 failed: Invalid resume JSON format", "results": results}), 500
-        
+        # Extract keywords first (needed for validation even if cache is hit)
         job_keywords = job_json.get('keywords', []) if isinstance(job_json, dict) else []
         resume_keywords = resume_json.get('keywords', []) if isinstance(resume_json, dict) else []
         
@@ -1335,13 +1391,37 @@ def run_full_analysis():
         job_keywords = list(set([k.lower().strip() for k in job_keywords if k]))
         resume_keywords = list(set([k.lower().strip() for k in resume_keywords if k]))
         
-        # Let AI prioritize technical keywords - don't filter here
+        # Check cache first
+        analysis_json = get_keyword_analysis_cache(job_text, resume_path, config)
+        cached = False
+        if analysis_json and isinstance(analysis_json, dict):
+            # Validate cached analysis has meaningful content
+            if analysis_json.get('keywords') and isinstance(analysis_json.get('keywords'), dict):
+                cached = True
+                print("Step 3: Using cached keyword analysis")
+            else:
+                # Cached version is invalid, clear it and continue
+                print("Warning: Cached keyword analysis is invalid, re-analyzing...")
+                analysis_json = None
         
-        analysis_json = resume_analysis_prompt(
-            job_json, resume_json,
-            job_keywords, resume_keywords,
-            base_url, model
-        )
+        # If not cached or invalid, run the analysis
+        if not analysis_json:
+            # CRITICAL: Double-check types before any .get() calls
+            if not isinstance(job_json, dict):
+                print(f"CRITICAL ERROR: job_json is not a dict at Step 3 start, type: {type(job_json)}, value: {str(job_json)[:200]}")
+                return jsonify({"error": "Step 3 failed: Invalid job JSON format", "results": results}), 500
+            if not isinstance(resume_json, dict):
+                print(f"CRITICAL ERROR: resume_json is not a dict at Step 3 start, type: {type(resume_json)}, value: {str(resume_json)[:200]}")
+                return jsonify({"error": "Step 3 failed: Invalid resume JSON format", "results": results}), 500
+            
+            # Let AI prioritize technical keywords - don't filter here
+            analysis_json = resume_analysis_prompt(
+                job_json, resume_json,
+                job_keywords, resume_keywords,
+                base_url, model
+            )
+        
+        # Calculate step3_time (whether cached or not)
         step3_time = time.time() - step3_start
         
         # Validate analysis_json is a dict
@@ -1507,8 +1587,15 @@ def run_full_analysis():
             if not analysis_json['overallFit'].get('commentary') or not str(analysis_json['overallFit'].get('commentary', '')).strip():
                 analysis_json['overallFit']['commentary'] = 'Focus on implementing the suggested improvements to strengthen your application.'
         
+        # Cache the result if it's valid (only if we generated it, not if it came from cache)
+        if not cached and analysis_json and isinstance(analysis_json, dict) and analysis_json.get('keywords'):
+            set_keyword_analysis_cache(job_text, resume_path, analysis_json, config)
+        
         results["step3"] = analysis_json
-        results["messages"].append(f"Step 3 completed: Keyword analysis generated successfully ({step3_time:.2f}s)")
+        if cached:
+            results["messages"].append(f"Step 3 completed: Keyword analysis loaded from cache ({step3_time:.2f}s)")
+        else:
+            results["messages"].append(f"Step 3 completed: Keyword analysis generated successfully ({step3_time:.2f}s)")
         
         # Step 4: Generate Improvements Based on Keyword Analysis
         step4_start = time.time()

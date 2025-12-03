@@ -115,6 +115,21 @@ def verify_db_schema(config_dict):
         """)
         conn.commit()
         print("Verified job_cache table exists")
+        
+        # Create keyword_analysis_cache table if it doesn't exist
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS keyword_analysis_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cache_key TEXT NOT NULL UNIQUE,
+                job_description_hash TEXT NOT NULL,
+                resume_path_hash TEXT NOT NULL,
+                analysis_json TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+        print("Verified keyword_analysis_cache table exists")
     finally:
         close_db_connection(conn)
 
