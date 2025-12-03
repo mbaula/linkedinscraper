@@ -273,6 +273,36 @@ function populateMultiSelect(type, options) {
 }
 
 
+function toggleImprovements(improvementsId) {
+    const improvementsDiv = document.getElementById(improvementsId);
+    const arrow = document.getElementById(improvementsId + '-arrow');
+    if (improvementsDiv && arrow) {
+        if (improvementsDiv.style.display === 'none') {
+            improvementsDiv.style.display = 'block';
+            arrow.textContent = '▲';
+        } else {
+            improvementsDiv.style.display = 'none';
+            arrow.textContent = '▼';
+        }
+    }
+}
+
+function toggleStepResult(resultId, arrowId) {
+    const resultDiv = document.getElementById(resultId);
+    const arrow = document.getElementById(arrowId);
+    if (resultDiv && arrow) {
+        if (resultDiv.style.display === 'none' || resultDiv.style.display === '') {
+            resultDiv.style.display = 'block';
+            resultDiv.classList.add('show');
+            arrow.textContent = '▲';
+        } else {
+            resultDiv.style.display = 'none';
+            resultDiv.classList.remove('show');
+            arrow.textContent = '▼';
+        }
+    }
+}
+
 function toggleMultiSelect(type) {
     const dropdown = document.getElementById(`filter-${type}-dropdown`);
     const isOpen = dropdown.style.display === 'block';
@@ -880,27 +910,8 @@ function updateJobDetails(job) {
     var jobDetailsDiv = document.getElementById('job-details');
     var coverLetterDiv = document.getElementById('bottom-pane'); // Get the cover letter div
     console.log('Updating job details: ' + job.id); // Log the jobId here
-    var html = '<h2 class="job-title">' + job.title + '</h2>';
-    html += '<div class="button-container" style="text-align:center">';
-    html += '<a href="' + job.job_url + '" class="job-button" target="_blank" rel="noopener noreferrer">Go to job</a>';
-    html += '<button class="job-button" onclick="markAsCoverLetter(' + job.id + ')">Cover Letter</button>';
-    html += '<button class="job-button" onclick="markAsApplied(' + job.id + ')">Applied</button>';
-    html += '<button class="job-button" onclick="markAsRejected(' + job.id + ')">Rejected</button>';
-    html += '<button class="job-button" onclick="markAsInterview(' + job.id + ')">Interview</button>';
-    html += '<button class="job-button" id="save-btn-' + job.id + '" onclick="toggleSaved(' + job.id + ')">' + (job.saved ? 'Unsave' : 'Save') + '</button>';
-    if (job.hidden == 1) {
-        html += '<button class="job-button" onclick="unhideJob(' + job.id + ')">Unhide</button>';
-    } else {
-        html += '<button class="job-button" onclick="hideJob(' + job.id + ')">Hide</button>';
-    }
-    html += '<button class="job-button" onclick="openAnalysisModal(' + job.id + ')">AI Analysis</button>';
-    html += '<button class="job-button" onclick="openAnalysisHistory(' + job.id + ')">Analysis History</button>';
-    html += '</div>';
-    html += '<p class="job-detail">' + job.company + ', ' + job.location + '</p>';
-    html += '<p class="job-detail">' + job.date + '</p>';
-    html += '<p class="job-description">' + job.job_description + '</p>';
-
-    jobDetailsDiv.innerHTML = html;
+    
+    jobDetailsDiv.innerHTML = AnalysisTemplates.formatJobDetails(job);
     
     // Update current job ID for cover letter generation
     currentCoverLetterJobId = job.id;
@@ -1502,18 +1513,71 @@ function updatePipelineStatus(step, status, message) {
     }
 }
 
+function formatJobJSON(job) {
+    return AnalysisTemplates.formatJobJSON(job);
+}
+
+function formatResumeJSON(resume) {
+    return AnalysisTemplates.formatResumeJSON(resume);
+}
+
+function formatMatchAnalysis(analysis) {
+    return AnalysisTemplates.formatMatchAnalysis(analysis);
+}
+
+function formatResumeImprovement(text) {
+    return AnalysisTemplates.formatResumeImprovement(text);
+}
+
+function escapeHtml(text) {
+    return AnalysisTemplates.escapeHtml(text);
+}
+
 function showPipelineResult(step, data) {
     const resultEl = document.getElementById(`step${step}-result`);
     const jsonEl = document.getElementById(`step${step}-json`);
     if (resultEl && jsonEl) {
+        let formattedHtml = '';
+        
         if (typeof data === 'string') {
-            // For Step 4 (improved resume), it's just text
-            jsonEl.textContent = data;
+            // For Step 4 (improved resume), format as markdown
+            formattedHtml = formatResumeImprovement(data);
+        } else if (step === 4 && data.improved_resume) {
+            // Handle Step 4 when data is an object with improved_resume property
+            formattedHtml = formatResumeImprovement(data.improved_resume);
         } else {
-            jsonEl.textContent = JSON.stringify(data, null, 2);
+            // Format JSON based on step
+            switch(step) {
+                case 1:
+                    formattedHtml = formatJobJSON(data);
+                    break;
+                case 2:
+                    formattedHtml = formatResumeJSON(data);
+                    break;
+                case 3:
+                    formattedHtml = formatMatchAnalysis(data);
+                    break;
+                case 4:
+                    formattedHtml = AnalysisTemplates.formatImprovements(data);
+                    break;
+                default:
+                    // Fallback to JSON for unknown steps
+                    formattedHtml = '<pre style="background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto;">' + escapeHtml(JSON.stringify(data, null, 2)) + '</pre>';
+            }
         }
-        resultEl.style.display = 'block';
-        resultEl.classList.add('show');
+        
+        jsonEl.innerHTML = formattedHtml;
+        
+        // Step 1 and 2 remain hidden by default (user must toggle to view)
+        // Step 3 and 4 are shown automatically
+        if (step === 1 || step === 2) {
+            // Keep hidden, user can toggle to view
+            resultEl.style.display = 'none';
+        } else {
+            // Show automatically for Step 3 and 4
+            resultEl.style.display = 'block';
+            resultEl.classList.add('show');
+        }
     }
 }
 
@@ -1536,7 +1600,7 @@ async function openAnalysisModal(jobId) {
         if (resumeData.resumes && resumeData.resumes.length > 0) {
             resumeOptions = '<option value="">Select a resume...</option>';
             resumeData.resumes.forEach(function(resume) {
-                resumeOptions += '<option value="' + resume.path + '">' + resume.name + '</option>';
+                resumeOptions += AnalysisTemplates.getResumeOption(resume);
             });
         } else {
             resumeOptions = '<option value="">No PDF files found in root folder</option>';
@@ -1559,8 +1623,7 @@ async function openAnalysisModal(jobId) {
             
             modelOptions = '';
             modelData.models.forEach(function(model) {
-                const selected = model === defaultModel ? ' selected' : '';
-                modelOptions += '<option value="' + model + '"' + selected + '>' + model + '</option>';
+                modelOptions += AnalysisTemplates.getModelOption(model, model === defaultModel);
             });
         } else {
             modelOptions = '<option value="">No models available</option>';
@@ -1570,79 +1633,36 @@ async function openAnalysisModal(jobId) {
         modelOptions = '<option value="">Error loading models</option>';
     }
     
-    // Build pipeline UI
-    let html = '<div class="ollama-pipeline-section">';
+    // Build pipeline UI using templates
+    let html = AnalysisTemplates.getModalContent();
     
-    // Resume selector and Model selector
-    html += '<div style="margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 6px;">';
-    html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">';
-    html += '<div>';
-    html += '<label style="display: block; margin-bottom: 8px; font-weight: bold; color: #333;">Select Resume:</label>';
-    html += '<select id="resume-selector" style="width: 100%; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; background-color: white;">';
-    html += resumeOptions;
-    html += '</select>';
-    html += '</div>';
-    html += '<div>';
-    html += '<label style="display: block; margin-bottom: 8px; font-weight: bold; color: #333;">Select Model:</label>';
-    html += '<select id="analysis-model-selector" style="width: 100%; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; background-color: white;">';
-    html += modelOptions;
-    html += '</select>';
-    html += '</div>';
-    html += '</div>';
-    html += '</div>';
+    // Inject resume and model options (replace the empty select tags)
+    html = html.replace('<select id="resume-selector" style="width: 100%; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; background-color: white;">', 
+                        '<select id="resume-selector" style="width: 100%; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; background-color: white;">' + resumeOptions);
+    html = html.replace('<select id="analysis-model-selector" style="width: 100%; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; background-color: white;">', 
+                        '<select id="analysis-model-selector" style="width: 100%; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; background-color: white;">' + modelOptions);
     
-    // Single Run Button
-    html += '<div style="text-align: center; margin-bottom: 30px;">';
-    html += '<button class="pipeline-step-button" onclick="runFullAnalysis(' + jobId + ')" id="run-full-analysis-btn" style="padding: 15px 40px; font-size: 16px; font-weight: bold;">Run Full Analysis</button>';
-    html += '</div>';
-    
-    // Verbose output area
-    html += '<div id="analysis-progress" style="margin-bottom: 20px; display: none;">';
-    html += '<h4 style="color: #4CAF50; margin-bottom: 10px;">Progress:</h4>';
-    html += '<div id="progress-messages" style="background-color: #f8f9fa; padding: 15px; border-radius: 6px; max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 13px; line-height: 1.6;">';
-    html += '</div>';
-    html += '</div>';
-    
-    // Results display
-    html += '<div id="analysis-results" style="display: none;">';
-    
-    // Step 1: Job Posting → Job JSON
-    html += '<div class="pipeline-step">';
-    html += '<div class="pipeline-step-header">';
-    html += '<span class="pipeline-step-title">Step 1: Job JSON</span>';
-    html += '</div>';
-    html += '<div class="pipeline-result" id="step1-result" style="display: none;"><pre id="step1-json"></pre></div>';
-    html += '</div>';
-    
-    // Step 2: Resume Text → Resume JSON
-    html += '<div class="pipeline-step">';
-    html += '<div class="pipeline-step-header">';
-    html += '<span class="pipeline-step-title">Step 2: Resume JSON</span>';
-    html += '</div>';
-    html += '<div class="pipeline-result" id="step2-result" style="display: none;"><pre id="step2-json"></pre></div>';
-    html += '</div>';
-    
-    // Step 3: Job JSON + Resume JSON → Match Analysis
-    html += '<div class="pipeline-step">';
-    html += '<div class="pipeline-step-header">';
-    html += '<span class="pipeline-step-title">Step 3: Match Analysis</span>';
-    html += '</div>';
-    html += '<div class="pipeline-result" id="step3-result" style="display: none;"><pre id="step3-json"></pre></div>';
-    html += '</div>';
-    
-    // Step 4: Resume Rewriter (Optional)
-    html += '<div class="pipeline-step">';
-    html += '<div class="pipeline-step-header">';
-    html += '<span class="pipeline-step-title">Step 4: Resume Improvement</span>';
-    html += '</div>';
-    html += '<div class="pipeline-result" id="step4-result" style="display: none;"><pre id="step4-json"></pre></div>';
-    html += '</div>';
-    
-    html += '</div>'; // Close analysis-results
-    html += '</div>'; // Close ollama-pipeline-section
+    // Set up button click handler
+    html = html.replace('id="run-full-analysis-btn"', `id="run-full-analysis-btn" onclick="runFullAnalysis(${jobId})"`);
     
     modalContent.innerHTML = html;
     modal.style.display = 'block';
+    
+    // Also set up event listener as fallback (in case onclick doesn't work)
+    setTimeout(function() {
+        const runButton = document.getElementById('run-full-analysis-btn');
+        if (runButton) {
+            // Remove any existing listeners
+            const newButton = runButton.cloneNode(true);
+            runButton.parentNode.replaceChild(newButton, runButton);
+            // Add new listener
+            newButton.addEventListener('click', function(e) {
+                e.preventDefault();
+                console.log('Button clicked via event listener, jobId:', jobId);
+                runFullAnalysis(jobId);
+            });
+        }
+    }, 100);
 }
 
 function closeAnalysisModal() {
@@ -1665,24 +1685,61 @@ async function openAnalysisHistory(jobId) {
         const data = await response.json();
         
         if (response.ok && data.analyses && data.analyses.length > 0) {
-            let html = '<div style="display: flex; flex-direction: column; gap: 15px;">';
+            let html = AnalysisTemplates.formatHistoryContainer();
             data.analyses.forEach(function(analysis, index) {
-                html += '<div class="pipeline-step" style="border-left: 4px solid #4CAF50;">';
-                html += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">';
-                html += '<span style="font-weight: bold; color: #4CAF50;">Analysis #' + (data.analyses.length - index) + '</span>';
-                html += '<span style="color: #666; font-size: 0.9em;">' + new Date(analysis.created_at).toLocaleString() + '</span>';
-                html += '</div>';
-                html += '<div class="pipeline-result show"><pre style="max-height: 300px;">' + JSON.stringify(JSON.parse(analysis.analysis_data), null, 2) + '</pre></div>';
-                html += '</div>';
+                html += AnalysisTemplates.formatHistoryEntry(analysis, index, data.analyses.length);
+                
+                // Parse and format the analysis data
+                try {
+                    const analysisData = JSON.parse(analysis.analysis_data);
+                    let formattedHtml = '';
+                    
+                    // Check if it's a full analysis with steps
+                    if (analysisData.step1 || analysisData.step2 || analysisData.step3 || analysisData.step4) {
+                        if (analysisData.step1) {
+                            const step1Id = 'hist-step1-' + index;
+                            formattedHtml += AnalysisTemplates.getHistoryStepTemplate(1, step1Id, 'Step 1: Job JSON', formatJobJSON(analysisData.step1));
+                        }
+                        if (analysisData.step2) {
+                            const step2Id = 'hist-step2-' + index;
+                            formattedHtml += AnalysisTemplates.getHistoryStepTemplate(2, step2Id, 'Step 2: Resume JSON', formatResumeJSON(analysisData.step2));
+                        }
+                        if (analysisData.step3) {
+                            formattedHtml += AnalysisTemplates.getHistoryStepTemplate(3, 'hist-step3-' + index, 'Step 3: Keyword Analysis', formatMatchAnalysis(analysisData.step3));
+                        }
+                        if (analysisData.step4) {
+                            formattedHtml += AnalysisTemplates.getHistoryStepTemplate(4, 'hist-step4-' + index, 'Step 4: Resume Improvements', AnalysisTemplates.formatImprovements(analysisData.step4));
+                        }
+                    } else {
+                        // Single analysis object - try to determine type
+                        if (analysisData.title || analysisData.company) {
+                            formattedHtml = formatJobJSON(analysisData);
+                        } else if (analysisData.personalInfo || analysisData.workExperience) {
+                            formattedHtml = formatResumeJSON(analysisData);
+                        } else if (analysisData.overallFit || analysisData.improvements) {
+                            formattedHtml = formatMatchAnalysis(analysisData);
+                        } else {
+                            // Fallback to JSON
+                            formattedHtml = AnalysisTemplates.formatJSONFallback(analysisData);
+                        }
+                        formattedHtml = AnalysisTemplates.formatSingleAnalysisWrapper(formattedHtml);
+                    }
+                    
+                    html += formattedHtml;
+                } catch (e) {
+                    // If parsing fails, show raw JSON
+                    html += AnalysisTemplates.formatHistoryRawJSON(analysis.analysis_data);
+                }
+                html += AnalysisTemplates.formatHistoryEntryFooter();
             });
-            html += '</div>';
+            html += AnalysisTemplates.formatHistoryContainerFooter();
             modalContent.innerHTML = html;
         } else {
-            modalContent.innerHTML = '<p style="text-align: center; color: #666; padding: 40px;">No analysis history found for this job.</p>';
+            modalContent.innerHTML = AnalysisTemplates.formatHistoryEmpty();
         }
     } catch (error) {
         console.error('Error fetching analysis history:', error);
-        modalContent.innerHTML = '<p style="text-align: center; color: #d32f2f; padding: 40px;">Error loading analysis history: ' + error.message + '</p>';
+        modalContent.innerHTML = AnalysisTemplates.formatHistoryError(error.message);
     }
     
     modal.style.display = 'block';
@@ -1825,6 +1882,7 @@ async function runStep3() {
         
         if (response.ok && result.analysis_json) {
             updatePipelineStatus(3, 'success', 'Match analysis completed!');
+            pipelineData.analysisJson = result.analysis_json; // Save for Step 4
             showPipelineResult(3, result.analysis_json);
             
             // Save analysis to history
@@ -1864,6 +1922,9 @@ async function runStep4() {
         const jobKeywords = pipelineData.jobJson?.keywords || [];
         const resumeKeywords = pipelineData.resumeJson?.keywords || [];
         
+        // Get improvements from Step 3 if available
+        const improvementsJson = pipelineData.analysisJson || null;
+        
         // Backend will load resume from resume_path in config
         const response = await fetch('/api/ollama/resume-improvement', {
             method: 'POST',
@@ -1878,6 +1939,7 @@ async function runStep4() {
                 ats_recommendations: '',
                 skill_priority_text: '',
                 current_cosine_similarity: 0.0,
+                improvements_json: improvementsJson, // Pass Step 3 analysis
                 base_url: config.base_url,
                 model: config.model
             })
@@ -1886,10 +1948,11 @@ async function runStep4() {
         const result = await response.json();
         
         if (response.ok && result.improved_resume) {
-            updatePipelineStatus(4, 'success', 'Resume improvement completed!');
-            showPipelineResult(4, { improved_resume: result.improved_resume });
+            updatePipelineStatus(4, 'success', 'Resume improvement examples generated!');
+            // Step 4 now returns bullet point examples (string), not full resume
+            showPipelineResult(4, result.improved_resume);
         } else {
-            updatePipelineStatus(4, 'error', result.error || 'Failed to improve resume');
+            updatePipelineStatus(4, 'error', result.error || 'Failed to generate improvement examples');
         }
     } catch (error) {
         console.error('Error in Step 4:', error);
@@ -1919,6 +1982,7 @@ async function saveAnalysisToHistory(jobId, analysisData) {
 }
 
 async function runFullAnalysis(jobId) {
+    console.log('runFullAnalysis called with jobId:', jobId);
     const resumeSelector = document.getElementById('resume-selector');
     const modelSelector = document.getElementById('analysis-model-selector');
     const runButton = document.getElementById('run-full-analysis-btn');
@@ -1955,15 +2019,25 @@ async function runFullAnalysis(jobId) {
     });
     
     try {
-        // Get Ollama config
-        const config = await getOllamaConfig();
-        
         // Add initial message
         addProgressMessage('Starting full analysis pipeline...');
         addProgressMessage('Using model: ' + selectedModel);
         addProgressMessage('Resume: ' + resumeSelector.options[resumeSelector.selectedIndex].text);
         
+        // Get Ollama config
+        console.log('Getting Ollama config...');
+        const config = await getOllamaConfig();
+        console.log('Ollama config:', config);
+        
         // Call the full analysis API
+        console.log('Calling /api/run-full-analysis with:', {
+            job_id: jobId,
+            resume_path: resumePath,
+            base_url: config.base_url,
+            model: selectedModel
+        });
+        
+        addProgressMessage('Sending request to server...');
         const response = await fetch('/api/run-full-analysis', {
             method: 'POST',
             headers: {
@@ -1977,7 +2051,10 @@ async function runFullAnalysis(jobId) {
             })
         });
         
+        console.log('Response status:', response.status);
+        addProgressMessage('Received response from server...');
         const result = await response.json();
+        console.log('Response result:', result);
         
         if (response.ok && result.success) {
             // Display progress messages
@@ -2004,16 +2081,21 @@ async function runFullAnalysis(jobId) {
             resultsDiv.style.display = 'block';
             addProgressMessage('✓ Analysis complete! Results displayed below.');
         } else {
-            addProgressMessage('✗ Error: ' + (result.error || 'Unknown error'));
+            // Display messages in chronological order first, then show error
             if (result.results && result.results.messages) {
                 result.results.messages.forEach(function(msg) {
                     addProgressMessage(msg);
                 });
             }
+            addProgressMessage('✗ Error: ' + (result.error || 'Unknown error'));
         }
     } catch (error) {
         console.error('Error running full analysis:', error);
+        console.error('Error stack:', error.stack);
         addProgressMessage('✗ Error: ' + error.message);
+        if (error.message.includes('fetch')) {
+            addProgressMessage('✗ Network error: Check if server is running and accessible');
+        }
     } finally {
         runButton.disabled = false;
         runButton.textContent = 'Run Full Analysis';

@@ -87,6 +87,21 @@ def verify_db_schema(config_dict):
         """)
         conn.commit()
         print("Verified analysis_history table exists")
+        
+        # Create resume_cache table if it doesn't exist
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS resume_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                resume_path TEXT NOT NULL UNIQUE,
+                file_hash TEXT NOT NULL,
+                file_mtime REAL NOT NULL,
+                resume_json TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+        print("Verified resume_cache table exists")
     finally:
         close_db_connection(conn)
 
