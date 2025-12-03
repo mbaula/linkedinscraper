@@ -296,6 +296,46 @@ def set_keyword_analysis_cache(job_description, resume_path, analysis_json, conf
         print(f"Error caching keyword analysis: {e}")
 
 
+def extract_essential_job_info(job_text):
+    """
+    Extract only essential information from job description, removing boilerplate.
+    Keeps: Title, About/Summary, Responsibilities, Requirements, Preferred qualifications
+    Removes: Benefits, Company info, Legal text, Contact info, Closing statements
+    Uses a less aggressive approach to preserve important content.
+    """
+    if not job_text:
+        return job_text
+    
+    # Keep first 500 chars (usually contains title, company, location, and intro)
+    first_part = job_text[:500] if len(job_text) > 500 else job_text
+    
+    # Patterns for sections to remove (more specific to avoid removing important content)
+    remove_patterns = [
+        r'(?i)(what\'s\s*in\s*it\s*for\s*you|benefits\s*package|compensation\s*package|perks\s*and\s*benefits)[:.]?\s*.+?(?=\n\n(?:Location|$)|$)',
+        r'(?i)(about\s*(?:the\s*)?company[^:]*:|company\s*overview[^:]*:|who\s*we\s*are[^:]*:)[:.]?\s*.+?(?=\n\n(?:Location|$)|$)',
+        r'(?i)(location\(s\)[^:]*:|work\s*location[^:]*:)[:.]?\s*.+?(?=\n\n|$)',
+        r'(?i)(equal\s*opportunity|accommodation|accessibility|diversity\s*statement)[:.]?\s*.+?(?=\n\n|$)',
+        r'(?i)(we\s*thank\s*all\s*applicants|candidates\s*must\s*apply\s*directly|candidates\s*must\s*apply\s*online).+?(?=\n\n|$)',
+        r'(?i)(requisition\s*id|job\s*id|posting\s*id)[:.]?\s*[^\n]+',
+        r'(?i)(scotiabank\s*is\s*a\s*leading|guided\s*by\s*our\s*purpose)[:.]?\s*.+?(?=\n\n|$)',
+    ]
+    
+    # Remove unwanted sections from the rest of the text
+    rest_of_text = job_text[500:] if len(job_text) > 500 else ""
+    cleaned_rest = rest_of_text
+    for pattern in remove_patterns:
+        cleaned_rest = re.sub(pattern, '', cleaned_rest, flags=re.DOTALL | re.IGNORECASE)
+    
+    # Combine first part with cleaned rest
+    result = first_part + cleaned_rest
+    
+    # Limit total length to 3000 chars to speed up processing
+    if len(result) > 3000:
+        result = result[:3000] + "..."
+    
+    return result
+
+
 def is_soft_skill(keyword):
     """
     Check if a keyword is a soft skill or generic phrase that should be excluded.
@@ -346,11 +386,33 @@ def call_ollama(prompt, base_url, model):
         return None
 
 
-def structured_job_prompt(raw_job_text, base_url, model):
+def structured_job_prompt(raw_job_text, base_url, model, job_title=None, job_company=None, job_location=None):
     """
     STEP 1: Job Posting → Job JSON
     Converts raw job posting text into structured JSON using Ollama.
+    
+    Args:
+        raw_job_text: Full job description text
+        base_url: Ollama base URL
+        model: Model name to use
+        job_title: Optional job title from database (to help extraction)
+        job_company: Optional company name from database (to help extraction)
+        job_location: Optional location from database (to help extraction)
     """
+    # Extract only essential info to speed up processing
+    essential_job_text = extract_essential_job_info(raw_job_text)
+    
+    # Add title, company, and location context if provided (from database)
+    context_info = ""
+    if job_title:
+        context_info += f"Job Title: {job_title}\n"
+    if job_company:
+        context_info += f"Company: {job_company}\n"
+    if job_location:
+        context_info += f"Location: {job_location}\n"
+    if context_info:
+        context_info = context_info + "\n"
+    
     prompt = f"""You are a JSON-extraction engine. Extract REAL data from the job posting below and convert it into JSON.
 
 CRITICAL REQUIREMENTS:
@@ -372,8 +434,8 @@ IMPORTANT: The schema shows "string" as a TYPE description. You must replace "st
 - If the company is "Google", use "Google" not "string"
 - If a field is missing, use "" (empty string) not "string"
 
-Job Posting:
-{raw_job_text}
+{context_info}Job Posting:
+{essential_job_text}
 
 Output ONLY the JSON object with real extracted values, no other text."""
 
@@ -493,7 +555,9 @@ def resume_analysis_prompt(job_json, resume_json, job_keywords, resume_keywords,
     STEP 3: Job JSON + Resume JSON → Keyword Analysis
     Identifies matching and missing keywords between job and resume.
     """
-    job_description = job_json.get("description", "") if isinstance(job_json, dict) else str(job_json)
+    # Extract only essential info from job description to speed up processing
+    job_description_full = job_json.get("description", "") if isinstance(job_json, dict) else str(job_json)
+    job_description = extract_essential_job_info(job_description_full)
     resume_text = json.dumps(resume_json, indent=2) if isinstance(resume_json, dict) else str(resume_json)
     job_keywords_str = ", ".join(job_keywords) if isinstance(job_keywords, list) else str(job_keywords)
     resume_keywords_str = ", ".join(resume_keywords) if isinstance(resume_keywords, list) else str(resume_keywords)
@@ -569,7 +633,9 @@ def resume_improvement_prompt(raw_job_description, job_json, resume_json, keywor
     STEP 4: Generate Improvements Based on Keyword Analysis
     Generates overallFit, improvements, and aspirationalImprovements based on keyword matching from Step 3.
     """
-    job_description = job_json.get("description", "") if isinstance(job_json, dict) else str(job_json)
+    # Extract only essential info from job description for Step 4 to speed up processing
+    job_description_full = job_json.get("description", "") if isinstance(job_json, dict) else str(job_json)
+    job_description = extract_essential_job_info(job_description_full)
     resume_text = json.dumps(resume_json, indent=2) if isinstance(resume_json, dict) else str(resume_json)
     
     # Validate keyword_analysis is a dict
@@ -750,11 +816,15 @@ def api_structured_job():
         raw_job_text = data.get('job_text', '')
         base_url = data.get('base_url', config.get("ollama_base_url", "http://localhost:11434"))
         model = data.get('model', config.get("ollama_model", "llama3.2:latest"))
+        job_title = data.get('job_title', None)
+        job_company = data.get('job_company', None)
+        job_location = data.get('job_location', None)
         
         if not raw_job_text:
             return jsonify({"error": "job_text is required"}), 400
         
-        result = structured_job_prompt(raw_job_text, base_url, model)
+        result = structured_job_prompt(raw_job_text, base_url, model, 
+                                       job_title=job_title, job_company=job_company, job_location=job_location)
         if result is None:
             return jsonify({"error": "Failed to extract job JSON from Ollama"}), 500
         
@@ -1141,6 +1211,11 @@ def run_full_analysis():
             print(f"Error: get_job_by_id returned non-dict, type: {type(job)}")
             return jsonify({"error": "Invalid job data format"}), 500
         
+        # Get title and company from job object (already in database)
+        job_title = job.get('title', '')
+        job_company = job.get('company', '')
+        job_location = job.get('location', '')
+        
         job_text = job.get('job_description', '') if isinstance(job, dict) else ''
         if not job_text or not job_text.strip():
             return jsonify({"error": "Job description is empty"}), 400
@@ -1200,8 +1275,9 @@ def run_full_analysis():
                         conn.commit()
                         conn.close()
                 
-                # Extract from job text if not in cache
-                job_json = structured_job_prompt(job_text, base_url, extraction_model)
+                # Extract from job text if not in cache (pass title/company/location from database)
+                job_json = structured_job_prompt(job_text, base_url, extraction_model, 
+                                                  job_title=job_title, job_company=job_company, job_location=job_location)
                 if not job_json:
                     return None, False, "Step 1 failed: Failed to extract job JSON"
                 if not isinstance(job_json, dict):
@@ -1212,6 +1288,24 @@ def run_full_analysis():
                 title = job_json.get('title', '').strip() if job_json.get('title') else ''
                 company = job_json.get('company', '').strip() if job_json.get('company') else ''
                 description = job_json.get('description', '').strip() if job_json.get('description') else ''
+                
+                # Fallback: Use database values if extraction failed or returned placeholder
+                if not title or title.lower() == 'string':
+                    if job_title:
+                        job_json['title'] = job_title
+                        title = job_title
+                        print(f"Using database title: {job_title}")
+                
+                if not company or company.lower() == 'string':
+                    if job_company:
+                        job_json['company'] = job_company
+                        company = job_company
+                        print(f"Using database company: {job_company}")
+                
+                if not job_json.get('location') or (isinstance(job_json.get('location'), str) and job_json.get('location').lower() == 'string'):
+                    if job_location:
+                        job_json['location'] = job_location
+                        print(f"Using database location: {job_location}")
                 
                 # Check if values are actual data (not empty and not "string" placeholder)
                 has_real_data = (
