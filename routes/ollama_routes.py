@@ -389,8 +389,19 @@ def is_soft_skill(keyword):
     return any(pattern in kw_lower for pattern in soft_skill_patterns)
 
 
-def call_ollama(prompt, base_url, model):
-    """Generic function to call Ollama API"""
+def call_ollama(prompt, base_url, model, num_predict=None, temperature=None, top_p=None, top_k=None):
+    """
+    Generic function to call Ollama API with optimized parameters for speed.
+    
+    Args:
+        prompt: The prompt to send to the model
+        base_url: Ollama base URL
+        model: Model name to use
+        num_predict: Maximum number of tokens to generate (limits output length for speed)
+        temperature: Sampling temperature (0.1-0.3 for extraction, 0.3-0.5 for analysis)
+        top_p: Nucleus sampling parameter (0.9 is a good default)
+        top_k: Top-k sampling parameter (40 is a good default)
+    """
     import requests
     try:
         url = f"{base_url}/api/generate"
@@ -399,14 +410,52 @@ def call_ollama(prompt, base_url, model):
             "prompt": prompt,
             "stream": False
         }
+        
+        # Add optimization parameters if provided
+        # Ollama API expects options at the top level, not nested
+        options = {}
+        if num_predict is not None:
+            options["num_predict"] = num_predict
+        if temperature is not None:
+            options["temperature"] = temperature
+        if top_p is not None:
+            options["top_p"] = top_p
+        if top_k is not None:
+            options["top_k"] = top_k
+        
+        if options:
+            payload["options"] = options
+        
+        print(f"DEBUG: Sending request to Ollama API: {url}")
+        print(f"DEBUG: Payload keys: {list(payload.keys())}, model={payload.get('model')}, has_options={bool(payload.get('options'))}")
+        if payload.get('options'):
+            print(f"DEBUG: Options: {payload['options']}")
+        
         response = requests.post(url, json=payload, timeout=300)
+        print(f"DEBUG: Ollama API response status: {response.status_code}")
+        
         if response.status_code == 200:
-            return response.json().get("response", "").strip()
+            response_data = response.json()
+            result = response_data.get("response", "").strip()
+            if not result:
+                print(f"WARNING: Ollama API returned 200 but response is empty. Full response: {response_data}")
+            return result
         else:
-            print(f"Ollama API error: {response.status_code} - {response.text}")
+            print(f"ERROR: Ollama API error: {response.status_code} - {response.text}")
+            print(f"ERROR: Request payload was: {payload}")
             return None
+    except requests.exceptions.Timeout as e:
+        print(f"ERROR: Ollama API timeout after 300s: {e}")
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"ERROR: Ollama API request exception: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
     except Exception as e:
-        print(f"Error connecting to Ollama: {e}")
+        print(f"ERROR: Unexpected error connecting to Ollama: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -422,9 +471,20 @@ def structured_job_prompt(raw_job_text, base_url, model, job_title=None, job_com
         job_title: Optional job title from database (to help extraction)
         job_company: Optional company name from database (to help extraction)
         job_location: Optional location from database (to help extraction)
+    
+    Returns:
+        dict: Extracted job JSON, or None if extraction fails
     """
+    if not raw_job_text or not raw_job_text.strip():
+        print("ERROR: structured_job_prompt called with empty raw_job_text")
+        return None
+    
     # Extract only essential info to speed up processing
     essential_job_text = extract_essential_job_info(raw_job_text)
+    if not essential_job_text or not essential_job_text.strip():
+        print("ERROR: extract_essential_job_info returned empty text")
+        # Fallback to original text if extraction fails
+        essential_job_text = raw_job_text[:2000]  # Limit to 2000 chars
     
     # Add title, company, and location context if provided (from database)
     context_info = ""
@@ -463,8 +523,35 @@ IMPORTANT: The schema shows "string" as a TYPE description. You must replace "st
 
 Output ONLY the JSON object with real extracted values, no other text."""
 
-    response = call_ollama(prompt, base_url, model)
-    if not response:
+    # Step 1: Extraction - use lower temperature and limit tokens for speed
+    print(f"Step 1: Calling Ollama with model={model}, base_url={base_url}")
+    print(f"Step 1: Prompt length={len(prompt)} chars, essential_job_text length={len(essential_job_text)} chars")
+    try:
+        response = call_ollama(prompt, base_url, model, 
+                              num_predict=700,      # Limit to ~700 tokens for faster extraction
+                              temperature=0.2,       # Low temperature for consistent extraction
+                              top_p=0.9,            # Nucleus sampling for faster inference
+                              top_k=40)             # Top-k sampling for faster inference
+        if not response:
+            print("ERROR: Step 1 - call_ollama returned None (no response from API)")
+            # Create fallback JSON from database values
+            print("WARNING: Step 1 - Creating fallback JSON from database values due to API failure")
+            fallback_json = {
+                "title": job_title or "",
+                "company": job_company or "",
+                "location": job_location or "",
+                "description": essential_job_text[:500] if essential_job_text else "",
+                "requirements": [],
+                "skills": [],
+                "keywords": []
+            }
+            print(f"Step 1: Returning fallback JSON with title='{fallback_json['title']}', company='{fallback_json['company']}'")
+            return fallback_json
+        print(f"Step 1: Received response from Ollama, length={len(response)} chars")
+    except Exception as e:
+        print(f"ERROR: Step 1 - Exception in call_ollama: {e}")
+        import traceback
+        traceback.print_exc()
         return None
     
     # Try to extract JSON from response (in case there's any markdown formatting)
@@ -484,46 +571,70 @@ Output ONLY the JSON object with real extracted values, no other text."""
         parsed_json = json.loads(json_str)
         # Validate that we got a dict with at least some content
         if not isinstance(parsed_json, dict):
-            print(f"Error: Parsed JSON is not a dict, type: {type(parsed_json)}")
-            return None
-        
-        # Clean up placeholder "string" values - replace with empty string or actual extracted data
-        cleaned_json = {}
-        for key, value in parsed_json.items():
-            if isinstance(value, str) and value.lower().strip() == "string":
-                # Replace placeholder "string" with empty string
-                cleaned_json[key] = ""
-            elif isinstance(value, list):
-                # Clean list items
-                cleaned_list = []
-                for item in value:
-                    if isinstance(item, str) and item.lower().strip() == "string":
-                        continue  # Skip placeholder items
-                    cleaned_list.append(item)
-                cleaned_json[key] = cleaned_list
-            else:
-                cleaned_json[key] = value
-        
-        # Check if we have any meaningful data (not all empty/placeholder)
-        has_data = any(
-            (isinstance(v, str) and v.strip() and v.lower() != "string") or
-            (isinstance(v, list) and len(v) > 0) or
-            (not isinstance(v, (str, list)) and v)
-            for v in cleaned_json.values()
-        )
-        
-        if not has_data:
-            print(f"Warning: Extracted job JSON contains only placeholder values")
-            print(f"Raw JSON: {json.dumps(parsed_json, indent=2)[:500]}")
-        
-        # Log what we extracted for debugging
-        print(f"Extracted job JSON - Title: '{cleaned_json.get('title', 'N/A')}', Company: '{cleaned_json.get('company', 'N/A')}'")
-        return cleaned_json
+            print(f"ERROR: Step 1 - Parsed JSON is not a dict, type: {type(parsed_json)}")
+            print(f"ERROR: Step 1 - JSON string was: {json_str[:500]}")
+            # Create fallback JSON
+            print("WARNING: Step 1 - Creating fallback JSON from database values")
+            return {
+                "title": job_title or "",
+                "company": job_company or "",
+                "location": job_location or "",
+                "description": essential_job_text[:500] if essential_job_text else "",
+                "requirements": [],
+                "skills": [],
+                "keywords": []
+            }
+        print(f"Step 1: Successfully parsed JSON, got {len(parsed_json)} keys")
     except json.JSONDecodeError as e:
-        print(f"Error parsing job JSON: {e}")
-        print(f"Response was: {response[:500]}")
-        print(f"Attempted to parse: {json_str[:200]}")
-        return None
+        print(f"ERROR: Step 1 - JSON decode error: {e}")
+        print(f"ERROR: Step 1 - Response was: {response[:1000]}")
+        print(f"ERROR: Step 1 - Extracted JSON string was: {json_str[:1000]}")
+        # Try to create a minimal valid JSON as fallback
+        print("WARNING: Step 1 - Attempting to create fallback JSON from database values")
+        fallback_json = {
+            "title": job_title or "",
+            "company": job_company or "",
+            "location": job_location or "",
+            "description": essential_job_text[:500] if essential_job_text else "",
+            "requirements": [],
+            "skills": [],
+            "keywords": []
+        }
+        print(f"Step 1: Returning fallback JSON with title='{fallback_json['title']}', company='{fallback_json['company']}'")
+        parsed_json = fallback_json  # Use fallback instead of returning None
+    
+    # Clean up placeholder "string" values - replace with empty string or actual extracted data
+    cleaned_json = {}
+    for key, value in parsed_json.items():
+        if isinstance(value, str) and value.lower().strip() == "string":
+            # Replace placeholder "string" with empty string
+            cleaned_json[key] = ""
+        elif isinstance(value, list):
+            # Clean list items
+            cleaned_list = []
+            for item in value:
+                if isinstance(item, str) and item.lower().strip() == "string":
+                    continue  # Skip placeholder items
+                cleaned_list.append(item)
+            cleaned_json[key] = cleaned_list
+        else:
+            cleaned_json[key] = value
+    
+    # Check if we have any meaningful data (not all empty/placeholder)
+    has_data = any(
+        (isinstance(v, str) and v.strip() and v.lower() != "string") or
+        (isinstance(v, list) and len(v) > 0) or
+        (not isinstance(v, (str, list)) and v)
+        for v in cleaned_json.values()
+    )
+    
+    if not has_data:
+        print(f"Warning: Extracted job JSON contains only placeholder values")
+        print(f"Raw JSON: {json.dumps(parsed_json, indent=2)[:500]}")
+    
+    # Log what we extracted for debugging
+    print(f"Extracted job JSON - Title: '{cleaned_json.get('title', 'N/A')}', Company: '{cleaned_json.get('company', 'N/A')}'")
+    return cleaned_json
 
 
 def structured_resume_prompt(resume_text, base_url, model):
@@ -555,7 +666,12 @@ Resume:
 
 NOTE: Please output only a valid JSON matching the EXACT schema."""
 
-    response = call_ollama(prompt, base_url, model)
+    # Step 2: Extraction - use lower temperature and limit tokens for speed
+    response = call_ollama(prompt, base_url, model,
+                          num_predict=700,      # Limit to ~700 tokens for faster extraction
+                          temperature=0.2,      # Low temperature for consistent extraction
+                          top_p=0.9,            # Nucleus sampling for faster inference
+                          top_k=40)             # Top-k sampling for faster inference
     if not response:
         return None
     
@@ -623,7 +739,12 @@ Original Resume (JSON):
 
 {resume_text}"""
 
-    response = call_ollama(prompt, base_url, model)
+    # Step 3: Keyword Analysis - moderate temperature and token limit
+    response = call_ollama(prompt, base_url, model,
+                          num_predict=1000,     # Limit to ~1000 tokens for keyword analysis
+                          temperature=0.3,      # Moderate temperature for analysis
+                          top_p=0.9,            # Nucleus sampling for faster inference
+                          top_k=40)             # Top-k sampling for faster inference
     if not response:
         return None
     
@@ -745,11 +866,12 @@ Original Resume (JSON - use this to create tailored examples based on actual exp
 
 {resume_text}"""
 
+    # Step 4: Improvements
     response = call_ollama(prompt, base_url, model)
     if not response:
         return None
     
-        # Parse JSON response
+    # Parse JSON response
     try:
         # Try to extract JSON from response
         import re
@@ -1356,10 +1478,19 @@ def run_full_analysis():
                         job_json = None  # Force re-extraction
                 
                 # Extract from job text if not in cache (pass title/company/location from database)
-                job_json = structured_job_prompt(job_text, base_url, extraction_model, 
-                                                  job_title=job_title, job_company=job_company, job_location=job_location)
-                if not job_json:
-                    return None, False, "Step 1 failed: Failed to extract job JSON"
+                print(f"Step 1: Attempting to extract job JSON from text (length={len(job_text)} chars)")
+                try:
+                    job_json = structured_job_prompt(job_text, base_url, extraction_model, 
+                                                      job_title=job_title, job_company=job_company, job_location=job_location)
+                    if not job_json:
+                        print("ERROR: Step 1 - structured_job_prompt returned None")
+                        return None, False, "Step 1 failed: Failed to extract job JSON (structured_job_prompt returned None)"
+                    print(f"Step 1: Successfully extracted job JSON with {len(job_json)} keys")
+                except Exception as e:
+                    print(f"ERROR: Step 1 - Exception in structured_job_prompt: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return None, False, f"Step 1 failed: Exception during extraction - {str(e)}"
                 if not isinstance(job_json, dict):
                     print(f"Error: structured_job_prompt returned non-dict: {type(job_json)}")
                     return None, False, "Step 1 failed: Invalid job JSON format"
@@ -1516,11 +1647,11 @@ def run_full_analysis():
         results["step1"] = job_json
         results["step2"] = resume_json
         
-        # Step 3: Keyword Analysis
+        # Step 3 and Step 4: Run in parallel (Step 4 waits for Step 3's result)
         step3_start = time.time()
-        results["messages"].append("Starting Step 3: Performing Keyword Analysis...")
+        results["messages"].append("Starting Step 3 and Step 4 in parallel...")
         
-        # Extract keywords first (needed for validation even if cache is hit)
+        # Extract keywords first (needed for both steps, done outside parallel execution)
         job_keywords = job_json.get('keywords', []) if isinstance(job_json, dict) else []
         resume_keywords = resume_json.get('keywords', []) if isinstance(resume_json, dict) else []
         
@@ -1567,89 +1698,154 @@ def run_full_analysis():
         job_keywords = list(set([k.lower().strip() for k in job_keywords if k]))
         resume_keywords = list(set([k.lower().strip() for k in resume_keywords if k]))
         
-        # Check cache first - ONLY if cache table exists and entry exists AND matches current job
-        analysis_json = None
-        cached = False
-        try:
-            # Verify cache table exists before trying to use it
-            conn = sqlite3.connect(config["db_path"])
-            cursor = conn.cursor()
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='keyword_analysis_cache'")
-            table_exists = cursor.fetchone() is not None
-            conn.close()
-            
-            if table_exists:
-                # Only check cache if table exists
-                cached_result = get_keyword_analysis_cache(job_text, resume_path, config)
-                if cached_result and isinstance(cached_result, dict):
-                    # CRITICAL: Validate that cached analysis matches this specific job
-                    # Check if cached analysis references the same job title/company
-                    cached_job_data = cached_result.get('job', {})
-                    if isinstance(cached_job_data, dict):
-                        cached_title = (cached_job_data.get('title') or '').strip()
-                        cached_company = (cached_job_data.get('company') or '').strip()
-                        
-                        # Validate title matches (if both exist)
-                        title_matches = True
-                        if job_title and cached_title:
-                            if cached_title.lower() != job_title.lower():
-                                title_matches = False
-                                print(f"Keyword cache mismatch: Cached title '{cached_title}' doesn't match job title '{job_title}'")
-                        elif job_title and not cached_title:
-                            title_matches = False
-                            print(f"Keyword cache mismatch: Job has title '{job_title}' but cache doesn't")
-                        
-                        # Validate company matches (if both exist)
-                        company_matches = True
-                        if job_company and cached_company:
-                            if cached_company.lower() != job_company.lower():
-                                company_matches = False
-                                print(f"Keyword cache mismatch: Cached company '{cached_company}' doesn't match job company '{job_company}'")
-                        elif job_company and not cached_company:
-                            company_matches = False
-                            print(f"Keyword cache mismatch: Job has company '{job_company}' but cache doesn't")
-                        
-                        # Only use cache if it matches this job
-                        if not title_matches or not company_matches:
-                            print("Warning: Cached keyword analysis doesn't match current job, re-analyzing...")
-                            cached_result = None
+        # Helper function for Step 3
+        def extract_keyword_analysis():
+            """Extract keyword analysis with caching"""
+            try:
+                step3_inner_start = time.time()
+                # Initialize variables before any try blocks
+                analysis_json = None
+                cached = False
+                
+                # Check cache first - ONLY if cache table exists and entry exists AND matches current job
+                try:
+                    # Verify cache table exists before trying to use it
+                    conn = sqlite3.connect(config["db_path"])
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='keyword_analysis_cache'")
+                    table_exists = cursor.fetchone() is not None
+                    conn.close()
                     
-                    # Validate cached analysis has meaningful content
-                    if cached_result and cached_result.get('keywords') and isinstance(cached_result.get('keywords'), dict):
-                        analysis_json = cached_result
-                        cached = True
-                        print("Step 3: Using cached keyword analysis")
+                    if table_exists:
+                        # Only check cache if table exists
+                        cached_result = get_keyword_analysis_cache(job_text, resume_path, config)
+                        if cached_result and isinstance(cached_result, dict):
+                            # CRITICAL: Validate that cached analysis matches this specific job
+                            # Check if cached analysis references the same job title/company
+                            cached_job_data = cached_result.get('job', {})
+                            if isinstance(cached_job_data, dict):
+                                cached_title = (cached_job_data.get('title') or '').strip()
+                                cached_company = (cached_job_data.get('company') or '').strip()
+                                
+                                # Validate title matches (if both exist)
+                                title_matches = True
+                                if job_title and cached_title:
+                                    if cached_title.lower() != job_title.lower():
+                                        title_matches = False
+                                        print(f"Keyword cache mismatch: Cached title '{cached_title}' doesn't match job title '{job_title}'")
+                                elif job_title and not cached_title:
+                                    title_matches = False
+                                    print(f"Keyword cache mismatch: Job has title '{job_title}' but cache doesn't")
+                                
+                                # Validate company matches (if both exist)
+                                company_matches = True
+                                if job_company and cached_company:
+                                    if cached_company.lower() != job_company.lower():
+                                        company_matches = False
+                                        print(f"Keyword cache mismatch: Cached company '{cached_company}' doesn't match job company '{job_company}'")
+                                elif job_company and not cached_company:
+                                    company_matches = False
+                                    print(f"Keyword cache mismatch: Job has company '{job_company}' but cache doesn't")
+                                
+                                # Only use cache if it matches this job
+                                if not title_matches or not company_matches:
+                                    print("Warning: Cached keyword analysis doesn't match current job, re-analyzing...")
+                                    cached_result = None
+                            
+                            # Validate cached analysis has meaningful content
+                            if cached_result and cached_result.get('keywords') and isinstance(cached_result.get('keywords'), dict):
+                                analysis_json = cached_result
+                                cached = True
+                                print("Step 3: Using cached keyword analysis")
+                            else:
+                                # Cached version is invalid, ignore it
+                                if cached_result:
+                                    print("Warning: Cached keyword analysis is invalid, re-analyzing...")
+                                analysis_json = None
                     else:
-                        # Cached version is invalid, ignore it
-                        if cached_result:
-                            print("Warning: Cached keyword analysis is invalid, re-analyzing...")
-                        analysis_json = None
-            else:
-                print("Step 3: Keyword analysis cache table does not exist, skipping cache check")
-        except Exception as e:
-            # If cache check fails for any reason, proceed without cache
-            print(f"Warning: Could not check keyword analysis cache: {e}")
-            analysis_json = None
+                        print("Step 3: Keyword analysis cache table does not exist, skipping cache check")
+                except Exception as e:
+                    # If cache check fails for any reason, proceed without cache
+                    print(f"Warning: Could not check keyword analysis cache: {e}")
+                    analysis_json = None
+                
+                # If not cached or invalid, run the analysis
+                if not analysis_json:
+                    # CRITICAL: Double-check types before any .get() calls
+                    if not isinstance(job_json, dict):
+                        print(f"CRITICAL ERROR: job_json is not a dict at Step 3 start, type: {type(job_json)}, value: {str(job_json)[:200]}")
+                        return None, False, 0.0
+                    if not isinstance(resume_json, dict):
+                        print(f"CRITICAL ERROR: resume_json is not a dict at Step 3 start, type: {type(resume_json)}, value: {str(resume_json)[:200]}")
+                        return None, False, 0.0
+                    
+                    # Let AI prioritize technical keywords - don't filter here
+                    analysis_json = resume_analysis_prompt(
+                        job_json, resume_json,
+                        job_keywords, resume_keywords,
+                        base_url, model
+                    )
+                
+                step3_inner_time = time.time() - step3_inner_start
+                
+                # Validate analysis_json is a dict
+                if not analysis_json:
+                    return None, False, step3_inner_time
+                
+                if isinstance(analysis_json, str):
+                    print(f"Error: analysis_json is a string, not a dict. Value: {analysis_json[:200]}")
+                    return None, False, step3_inner_time
+                
+                if not isinstance(analysis_json, dict):
+                    print(f"Error: analysis_json is not a dict, type: {type(analysis_json)}")
+                    return None, False, step3_inner_time
+                
+                # Return the analysis_json - validation will be done in main code
+                return analysis_json, cached, step3_inner_time
+            except Exception as e:
+                print(f"Error in extract_keyword_analysis: {e}")
+                import traceback
+                traceback.print_exc()
+                return None, False, 0.0
         
-        # If not cached or invalid, run the analysis
-        if not analysis_json:
-            # CRITICAL: Double-check types before any .get() calls
-            if not isinstance(job_json, dict):
-                print(f"CRITICAL ERROR: job_json is not a dict at Step 3 start, type: {type(job_json)}, value: {str(job_json)[:200]}")
-                return jsonify({"error": "Step 3 failed: Invalid job JSON format", "results": results}), 500
-            if not isinstance(resume_json, dict):
-                print(f"CRITICAL ERROR: resume_json is not a dict at Step 3 start, type: {type(resume_json)}, value: {str(resume_json)[:200]}")
-                return jsonify({"error": "Step 3 failed: Invalid resume JSON format", "results": results}), 500
+        # Helper function for Step 4 (depends on Step 3's analysis_json)
+        def extract_improvements(step3_future):
+            """Extract improvements - waits for analysis_json from Step 3"""
+            try:
+                step4_inner_start = time.time()
+                # Wait for Step 3 to complete and get analysis_json
+                analysis_json, cached, step3_time = step3_future.result()
+                
+                if not analysis_json:
+                    return None, step3_time, 0.0
+                
+                improvements_result = resume_improvement_prompt(
+                    job_text, job_json, resume_json, analysis_json, base_url, model
+                )
+                step4_inner_time = time.time() - step4_inner_start
+                return improvements_result, step3_time, step4_inner_time
+            except Exception as e:
+                print(f"Error in extract_improvements: {e}")
+                import traceback
+                traceback.print_exc()
+                return None, 0.0, 0.0
+        
+        # Run Step 3 and Step 4 in parallel (Step 4 waits for Step 3's result)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            # Submit Step 3
+            step3_future = executor.submit(extract_keyword_analysis)
+            # Submit Step 4 (it will wait for Step 3's result)
+            step4_future = executor.submit(extract_improvements, step3_future)
             
-            # Let AI prioritize technical keywords - don't filter here
-            analysis_json = resume_analysis_prompt(
-                job_json, resume_json,
-                job_keywords, resume_keywords,
-                base_url, model
-            )
-        
-        # Calculate step3_time (whether cached or not)
-        step3_time = time.time() - step3_start
+            # Wait for both to complete
+            analysis_json, cached, step3_time = step3_future.result()
+            improvements_result, step3_time_from_step4, step4_time = step4_future.result()
+            
+            # Use step3_time from Step 3 (more accurate)
+            if step3_time > 0:
+                step3_time = step3_time
+            else:
+                step3_time = time.time() - step3_start
         
         # Validate analysis_json is a dict
         if not analysis_json:
@@ -1824,13 +2020,22 @@ def run_full_analysis():
         else:
             results["messages"].append(f"Step 3 completed: Keyword analysis generated successfully ({step3_time:.2f}s)")
         
-        # Step 4: Generate Improvements Based on Keyword Analysis
-        step4_start = time.time()
-        results["messages"].append("Starting Step 4: Generating Improvements...")
-        improvements_result = resume_improvement_prompt(
-            job_text, job_json, resume_json, analysis_json, base_url, model
-        )
-        step4_time = time.time() - step4_start
+        # Run Step 3 and Step 4 in parallel (Step 4 waits for Step 3's result)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            # Submit Step 3
+            step3_future = executor.submit(extract_keyword_analysis)
+            # Submit Step 4 (it will wait for Step 3's result)
+            step4_future = executor.submit(extract_improvements, step3_future)
+            
+            # Wait for both to complete
+            analysis_json, cached, step3_time = step3_future.result()
+            improvements_result, step3_time_from_step4, step4_time = step4_future.result()
+            
+            # Use step3_time from Step 3 (more accurate)
+            if step3_time > 0:
+                step3_time = step3_time
+            else:
+                step3_time = time.time() - step3_start
         
         # Validate improvements_result is a dict if it exists
         if improvements_result:
