@@ -334,6 +334,21 @@
                 </div>
             </div>
 
+            <!-- Cache Management Section -->
+            <div class="section">
+                <h2>Cache Management</h2>
+                <div class="form-group">
+                    <label>Clear Caches</label>
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button type="button" class="btn btn-secondary" onclick="clearJobCache()">Clear Job Cache</button>
+                        <button type="button" class="btn btn-secondary" onclick="clearResumeCache()">Clear Resume Cache</button>
+                    </div>
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        Clear cached job and resume JSON data. This will force re-extraction on the next analysis.
+                    </small>
+                </div>
+            </div>
+
             <!-- Action Buttons -->
             <div class="button-group">
                 <button type="button" class="btn btn-primary" onclick="saveConfig()">Save Configuration</button>
@@ -677,6 +692,52 @@
             setTimeout(() => {
                 statusDiv.style.display = 'none';
             }, 5000);
+        }
+
+        function clearJobCache() {
+            if (!confirm('Are you sure you want to clear the job cache? This will force re-extraction of job JSON on the next analysis.')) {
+                return;
+            }
+            fetch('/api/config/clear-job-cache', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showMessage(data.message, 'success');
+                } else {
+                    showMessage('Error: ' + (data.error || 'Failed to clear job cache'), 'error');
+                }
+            })
+            .catch(error => {
+                showMessage('Error clearing job cache: ' + error, 'error');
+            });
+        }
+
+        function clearResumeCache() {
+            if (!confirm('Are you sure you want to clear the resume cache? This will force re-extraction of resume JSON on the next analysis.')) {
+                return;
+            }
+            fetch('/api/config/clear-resume-cache', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showMessage(data.message, 'success');
+                } else {
+                    showMessage('Error: ' + (data.error || 'Failed to clear resume cache'), 'error');
+                }
+            })
+            .catch(error => {
+                showMessage('Error clearing resume cache: ' + error, 'error');
+            });
         }
     </script>
 </body>

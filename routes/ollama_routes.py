@@ -8,6 +8,8 @@ import os
 import glob
 import sqlite3
 import hashlib
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from services.job_service import get_job_by_id
 from utils.pdf_utils import read_pdf
 
@@ -82,10 +84,12 @@ RESUME_SCHEMA = """{
 # Step 3 Schema - Keyword Matching Only
 KEYWORD_ANALYSIS_SCHEMA = """{
   "keywords": {
-    "matching": ["string (keywords that appear in both job and resume)"],
-    "missing": ["string (important job keywords that are missing from resume)"]
+    "matching": ["python", "react", "kubernetes"],
+    "missing": ["docker", "aws", "terraform"]
   }
-}"""
+}
+
+IMPORTANT: Replace the example values above with actual keywords from the job description and resume. The "matching" array should contain actual technical keywords that appear in BOTH the job description AND the resume. The "missing" array should contain actual important technical keywords from the job description that are NOT found in the resume. DO NOT include the word "string" or placeholder text - only include real keywords."""
 
 # Step 4 Schema - Improvements
 IMPROVEMENTS_SCHEMA = """{
@@ -107,7 +111,9 @@ IMPROVEMENTS_SCHEMA = """{
       "example": "string (example of what the bullet point would look like if they had this experience)"
     }
   ]
-}"""
+}
+
+CRITICAL: The "improvements" array and "aspirationalImprovements" array are SEPARATE and MUST be kept separate. Do NOT mix them together."""
 
 
 def get_resume_cache(resume_path, config):
@@ -172,6 +178,61 @@ def set_resume_cache(resume_path, resume_json, config):
         print(f"Error caching resume: {e}")
 
 
+def get_job_cache(job_description, config):
+    """
+    Get cached job JSON if it exists.
+    Returns job_json if cache is valid, None otherwise.
+    """
+    if not job_description:
+        return None
+    
+    try:
+        # Create hash of job description
+        job_hash = hashlib.md5(job_description.encode('utf-8')).hexdigest()
+        
+        conn = sqlite3.connect(config["db_path"])
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT job_json FROM job_cache WHERE job_description_hash = ?",
+            (job_hash,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return json.loads(row[0])
+        
+        return None
+    except Exception as e:
+        print(f"Error checking job cache: {e}")
+        return None
+
+
+def set_job_cache(job_description, job_json, config):
+    """
+    Store job JSON in cache.
+    """
+    if not job_description:
+        return
+    
+    try:
+        # Create hash of job description
+        job_hash = hashlib.md5(job_description.encode('utf-8')).hexdigest()
+        
+        conn = sqlite3.connect(config["db_path"])
+        cursor = conn.cursor()
+        cursor.execute(
+            """INSERT OR REPLACE INTO job_cache 
+               (job_description_hash, job_json, updated_at) 
+               VALUES (?, ?, CURRENT_TIMESTAMP)""",
+            (job_hash, json.dumps(job_json))
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error caching job: {e}")
+
+
 def is_soft_skill(keyword):
     """
     Check if a keyword is a soft skill or generic phrase that should be excluded.
@@ -227,39 +288,92 @@ def structured_job_prompt(raw_job_text, base_url, model):
     STEP 1: Job Posting → Job JSON
     Converts raw job posting text into structured JSON using Ollama.
     """
-    prompt = f"""You are a JSON-extraction engine. Convert the following raw job posting text into exactly the JSON schema below:
-— Do not add any extra fields or prose.
-— Use "YYYY-MM-DD" for all dates.
-— Ensure any URLs (website, applyLink) conform to URI format.
-— Do not change the structure or key names; output only valid JSON matching the schema.
-— Do not format the response in Markdown or any other format. Just output raw JSON.
+    prompt = f"""You are a JSON-extraction engine. Extract REAL data from the job posting below and convert it into JSON.
+
+CRITICAL REQUIREMENTS:
+1. Extract ACTUAL values from the job posting - DO NOT use placeholder text like "string", "example", or schema descriptions
+2. If a field is not found in the job posting, use an empty string "" or empty array [] (NOT the word "string")
+3. Extract the real job title, company name, location, description, requirements, and skills from the text
+4. Do not add any extra fields or prose
+5. Use "YYYY-MM-DD" for all dates
+6. Ensure any URLs (website, applyLink) conform to URI format
+7. Output ONLY valid JSON - no Markdown formatting, no code blocks, no explanations
 
 Schema:
 ```json
 {JOB_SCHEMA}
 ```
 
+IMPORTANT: The schema shows "string" as a TYPE description. You must replace "string" with ACTUAL extracted text from the job posting. For example:
+- If the job title is "Software Engineer", use "Software Engineer" not "string"
+- If the company is "Google", use "Google" not "string"
+- If a field is missing, use "" (empty string) not "string"
+
 Job Posting:
 {raw_job_text}
 
-Note: Please output only a valid JSON matching the EXACT schema with no surrounding commentary."""
+Output ONLY the JSON object with real extracted values, no other text."""
 
     response = call_ollama(prompt, base_url, model)
     if not response:
         return None
     
     # Try to extract JSON from response (in case there's any markdown formatting)
-    json_match = re.search(r'\{.*\}', response, re.DOTALL)
-    if json_match:
-        json_str = json_match.group(0)
+    # First try to find JSON wrapped in code blocks
+    code_block_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response, re.DOTALL)
+    if code_block_match:
+        json_str = code_block_match.group(1)
     else:
-        json_str = response
+        # Try to find JSON object directly
+        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(0)
+        else:
+            json_str = response
     
     try:
-        return json.loads(json_str)
+        parsed_json = json.loads(json_str)
+        # Validate that we got a dict with at least some content
+        if not isinstance(parsed_json, dict):
+            print(f"Error: Parsed JSON is not a dict, type: {type(parsed_json)}")
+            return None
+        
+        # Clean up placeholder "string" values - replace with empty string or actual extracted data
+        cleaned_json = {}
+        for key, value in parsed_json.items():
+            if isinstance(value, str) and value.lower().strip() == "string":
+                # Replace placeholder "string" with empty string
+                cleaned_json[key] = ""
+            elif isinstance(value, list):
+                # Clean list items
+                cleaned_list = []
+                for item in value:
+                    if isinstance(item, str) and item.lower().strip() == "string":
+                        continue  # Skip placeholder items
+                    cleaned_list.append(item)
+                cleaned_json[key] = cleaned_list
+            else:
+                cleaned_json[key] = value
+        
+        # Check if we have any meaningful data (not all empty/placeholder)
+        has_data = any(
+            (isinstance(v, str) and v.strip() and v.lower() != "string") or
+            (isinstance(v, list) and len(v) > 0) or
+            (not isinstance(v, (str, list)) and v)
+            for v in cleaned_json.values()
+        )
+        
+        if not has_data:
+            print(f"Warning: Extracted job JSON contains only placeholder values")
+            print(f"Raw JSON: {json.dumps(parsed_json, indent=2)[:500]}")
+        
+        # Log what we extracted for debugging
+        print(f"Extracted job JSON - Title: '{cleaned_json.get('title', 'N/A')}', Company: '{cleaned_json.get('company', 'N/A')}'")
+        return cleaned_json
     except json.JSONDecodeError as e:
         print(f"Error parsing job JSON: {e}")
         print(f"Response was: {response[:500]}")
+        print(f"Attempted to parse: {json_str[:200]}")
         return None
 
 
@@ -335,6 +449,8 @@ CRITICAL REQUIREMENTS:
 
 STRICTLY emit JSON that matches the schema below with no extra keys, prose, or markdown.
 
+CRITICAL: The "matching" and "missing" arrays must contain ACTUAL KEYWORDS (like "Python", "React", "Docker", "AWS"), NOT the literal word "string" or placeholder text. Replace the example values in the schema with real keywords from the job description and resume.
+
 Schema:
 
 {KEYWORD_ANALYSIS_SCHEMA}
@@ -368,9 +484,19 @@ Original Resume (JSON):
         json_str = response
     
     try:
-        return json.loads(json_str)
+        parsed = json.loads(json_str)
+        # Ensure we return a dict, not a string or other type
+        if not isinstance(parsed, dict):
+            print(f"Error: Parsed JSON is not a dict, type: {type(parsed)}")
+            print(f"Response was: {response[:500]}")
+            return None
+        return parsed
     except json.JSONDecodeError as e:
         print(f"Error parsing analysis JSON: {e}")
+        print(f"Response was: {response[:500]}")
+        return None
+    except Exception as e:
+        print(f"Unexpected error parsing analysis JSON: {e}")
         print(f"Response was: {response[:500]}")
         return None
 
@@ -383,8 +509,23 @@ def resume_improvement_prompt(raw_job_description, job_json, resume_json, keywor
     job_description = job_json.get("description", "") if isinstance(job_json, dict) else str(job_json)
     resume_text = json.dumps(resume_json, indent=2) if isinstance(resume_json, dict) else str(resume_json)
     
-    matching_keywords = keyword_analysis.get('keywords', {}).get('matching', [])
-    missing_keywords = keyword_analysis.get('keywords', {}).get('missing', [])
+    # Validate keyword_analysis is a dict
+    if not isinstance(keyword_analysis, dict):
+        print(f"Error: keyword_analysis is not a dict, type: {type(keyword_analysis)}")
+        if isinstance(keyword_analysis, str):
+            try:
+                keyword_analysis = json.loads(keyword_analysis)
+            except:
+                keyword_analysis = {'keywords': {'matching': [], 'missing': []}}
+        else:
+            keyword_analysis = {'keywords': {'matching': [], 'missing': []}}
+    
+    keywords_section = keyword_analysis.get('keywords', {}) if isinstance(keyword_analysis, dict) else {}
+    if not isinstance(keywords_section, dict):
+        keywords_section = {}
+    
+    matching_keywords = keywords_section.get('matching', []) if isinstance(keywords_section, dict) else []
+    missing_keywords = keywords_section.get('missing', []) if isinstance(keywords_section, dict) else []
     
     matching_str = ", ".join(matching_keywords[:20]) if matching_keywords else "None identified"
     missing_str = ", ".join(missing_keywords[:20]) if missing_keywords else "None"
@@ -410,13 +551,17 @@ Instructions:
    - If a job requirement is missing from the resume, DO NOT suggest adding it in this section - save it for "aspirationalImprovements"
    - NEVER provide vague suggestions like "re-phrase X to emphasize Y" - you MUST provide the actual rewritten text in the example field
    - The "improvements" array is MANDATORY and must contain at least 5 suggestions - do not skip this section
+   - CRITICAL: Put ONLY realistic improvements based on existing resume content in the "improvements" array
 
-3. OPTIONAL: Provide 3-5 "aspirationalImprovements" - suggestions for what COULD be added if the candidate had certain experience. CRITICAL REQUIREMENTS:
+3. REQUIRED: Provide 3-5 "aspirationalImprovements" - suggestions for what COULD be added if the candidate had certain experience. CRITICAL REQUIREMENTS:
    - These are hypothetical improvements - things that would help IF the candidate had this experience
    - Focus on critical missing keywords that cannot be addressed by rewriting existing content
    - Each should have a "suggestion" explaining what experience would be helpful
    - Each should have an "example" showing what a bullet point would look like IF they had that experience
-   - These are separate from the "improvements" array - they're aspirational, not based on existing resume content
+   - These are SEPARATE from the "improvements" array - they're aspirational, not based on existing resume content
+   - CRITICAL: Put ONLY hypothetical/aspirational improvements in the "aspirationalImprovements" array
+   - DO NOT put improvements based on existing resume content in this array - those belong in "improvements"
+   - This array is for things the candidate DOESN'T have but WOULD help if they did
 
 IMPORTANT: 
 - Never suggest changes to summary, career summary, or personal summary sections. Focus exclusively on work experience bullets, projects, skills sections, and education.
@@ -451,15 +596,49 @@ Original Resume (JSON - use this to create tailored examples based on actual exp
     if not response:
         return None
     
-    # Parse JSON response
+        # Parse JSON response
     try:
         # Try to extract JSON from response
         import re
-        json_match = re.search(r'\{.*\}', response, re.DOTALL)
-        if json_match:
-            result = json.loads(json_match.group())
+        # First try to find JSON wrapped in code blocks
+        code_block_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response, re.DOTALL)
+        if code_block_match:
+            json_str = code_block_match.group(1)
         else:
-            result = json.loads(response)
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+            else:
+                json_str = response
+        
+        result = json.loads(json_str)
+        
+        # Ensure result is a dict
+        if not isinstance(result, dict):
+            print(f"Error: Parsed JSON is not a dict, type: {type(result)}")
+            print(f"Response was: {response[:500]}")
+            return None
+        
+        # Ensure improvements and aspirationalImprovements are separate arrays
+        if 'improvements' not in result:
+            result['improvements'] = []
+        if 'aspirationalImprovements' not in result:
+            result['aspirationalImprovements'] = []
+        
+        # Validate that improvements is an array
+        if not isinstance(result.get('improvements'), list):
+            print(f"Warning: improvements is not a list, type: {type(result.get('improvements'))}")
+            result['improvements'] = []
+        
+        # Validate that aspirationalImprovements is an array
+        if not isinstance(result.get('aspirationalImprovements'), list):
+            print(f"Warning: aspirationalImprovements is not a list, type: {type(result.get('aspirationalImprovements'))}")
+            result['aspirationalImprovements'] = []
+        
+        # Log the structure for debugging
+        improvements_count = len(result.get('improvements', []))
+        aspirational_count = len(result.get('aspirationalImprovements', []))
+        print(f"Step 4 result - Improvements: {improvements_count}, Aspirational: {aspirational_count}")
         
         # Ensure overallFit is always present
         if 'overallFit' not in result or not result.get('overallFit'):
@@ -857,13 +1036,24 @@ def run_full_analysis():
     """API endpoint to run all analysis steps sequentially"""
     config = current_app.config['CONFIG']
     try:
+        import traceback
         print("run_full_analysis called")
+        
+        # Validate config is a dict
+        if not isinstance(config, dict):
+            print(f"Error: config is not a dict, type: {type(config)}")
+            return jsonify({"error": "Invalid configuration"}), 500
+        
         data = request.get_json()
+        if not isinstance(data, dict):
+            print(f"Error: request.get_json() returned non-dict, type: {type(data)}")
+            return jsonify({"error": "Invalid request data"}), 400
+        
         print(f"Received data: {data}")
-        job_id = data.get('job_id')
-        resume_path = data.get('resume_path', None)
-        base_url = data.get('base_url', config.get("ollama_base_url", "http://localhost:11434"))
-        model = data.get('model', config.get("ollama_model", "llama3.2:latest"))
+        job_id = data.get('job_id') if isinstance(data, dict) else None
+        resume_path = data.get('resume_path', None) if isinstance(data, dict) else None
+        base_url = data.get('base_url', config.get("ollama_base_url", "http://localhost:11434")) if isinstance(data, dict) and isinstance(config, dict) else "http://localhost:11434"
+        model = data.get('model', config.get("ollama_model", "llama3.2:latest")) if isinstance(data, dict) and isinstance(config, dict) else "llama3.2:latest"
         
         if not job_id:
             print("Error: job_id is required")
@@ -871,66 +1061,243 @@ def run_full_analysis():
         
         print(f"Processing job_id: {job_id}, resume_path: {resume_path}, model: {model}")
         
+        # Start timing
+        analysis_start_time = time.time()
+        
         # Get job description
         job = get_job_by_id(job_id, config)
         if not job:
             return jsonify({"error": "Job not found"}), 404
         
-        job_text = job.get('job_description', '')
+        # Validate job is a dict
+        if isinstance(job, str):
+            print(f"Error: get_job_by_id returned a string, not a dict. Value: {job[:200]}")
+            return jsonify({"error": "Invalid job data format"}), 500
+        
+        if not isinstance(job, dict):
+            print(f"Error: get_job_by_id returned non-dict, type: {type(job)}")
+            return jsonify({"error": "Invalid job data format"}), 500
+        
+        job_text = job.get('job_description', '') if isinstance(job, dict) else ''
+        if not job_text or not job_text.strip():
+            return jsonify({"error": "Job description is empty"}), 400
+        
         results = {
             "step1": None,
             "step2": None,
             "step3": None,
             "step4": None,
-            "messages": []
+            "messages": [],
+            "timings": {}
         }
         
-        # Step 1: Extract Job JSON
-        results["messages"].append("Starting Step 1: Extracting Job JSON...")
-        job_json = structured_job_prompt(job_text, base_url, model)
-        if not job_json:
-            return jsonify({"error": "Step 1 failed: Failed to extract job JSON", "results": results}), 500
-        results["step1"] = job_json
-        results["messages"].append("Step 1 completed: Job JSON extracted successfully")
+        # Get faster model for extraction steps (Steps 1-2)
+        # Use smaller/faster model for extraction, keep main model for analysis
+        extraction_model = config.get("ollama_extraction_model", None)  # e.g., "llama3.2:1b" or "llama3.2:3b"
+        if not extraction_model:
+            # Fallback: use main model if no extraction model specified
+            extraction_model = model
         
-        # Step 2: Extract Resume JSON (with caching)
-        results["messages"].append("Starting Step 2: Extracting Resume JSON...")
-        if resume_path:
-            resume_text = read_pdf(resume_path)
-            if not resume_text:
-                return jsonify({"error": f"Step 2 failed: Failed to read resume from {resume_path}", "results": results}), 400
-        else:
+        # Determine resume path
+        if not resume_path:
             resume_path = config.get("resume_path", "")
-            if resume_path:
-                resume_text = read_pdf(resume_path)
-                if not resume_text:
-                    return jsonify({"error": f"Step 2 failed: Failed to read resume from {resume_path}", "results": results}), 400
-            else:
+            if not resume_path:
                 return jsonify({"error": "Step 2 failed: No resume path provided", "results": results}), 400
         
-        # Check cache first
-        resume_json = get_resume_cache(resume_path, config)
-        if resume_json:
-            results["messages"].append("Step 2 completed: Resume JSON loaded from cache")
-        else:
-            # Extract from PDF if not in cache
-            resume_json = structured_resume_prompt(resume_text, base_url, model)
-            if not resume_json:
-                return jsonify({"error": "Step 2 failed: Failed to extract resume JSON", "results": results}), 500
-            # Cache the result
-            set_resume_cache(resume_path, resume_json, config)
-            results["messages"].append("Step 2 completed: Resume JSON extracted successfully")
+        # Helper functions for parallel execution
+        def extract_job_json():
+            """Extract job JSON with caching"""
+            try:
+                msg = "Starting Step 1: Extracting Job JSON..."
+                # Check cache first
+                job_json = get_job_cache(job_text, config)
+                if job_json and isinstance(job_json, dict):
+                    # Validate cached job JSON has meaningful content (not placeholder "string" values)
+                    title = (job_json.get('title') or '').strip()
+                    company = (job_json.get('company') or '').strip()
+                    description = (job_json.get('description') or '').strip()
+                    
+                    # Check if values are actual data (not empty and not "string" placeholder)
+                    has_real_data = (
+                        (title and title.lower() != 'string') or
+                        (company and company.lower() != 'string') or
+                        (description and description.lower() != 'string')
+                    )
+                    
+                    if has_real_data:
+                        return job_json, True, "Step 1 completed: Job JSON loaded from cache"
+                    else:
+                        # Cached version is empty or has placeholder values, clear it and re-extract
+                        print("Warning: Cached job JSON is empty or contains placeholder values, re-extracting...")
+                        # Clear the cache
+                        job_hash = hashlib.md5(job_text.encode('utf-8')).hexdigest()
+                        conn = sqlite3.connect(config["db_path"])
+                        cursor = conn.cursor()
+                        cursor.execute("DELETE FROM job_cache WHERE job_description_hash = ?", (job_hash,))
+                        conn.commit()
+                        conn.close()
+                
+                # Extract from job text if not in cache
+                job_json = structured_job_prompt(job_text, base_url, extraction_model)
+                if not job_json:
+                    return None, False, "Step 1 failed: Failed to extract job JSON"
+                if not isinstance(job_json, dict):
+                    print(f"Error: structured_job_prompt returned non-dict: {type(job_json)}")
+                    return None, False, "Step 1 failed: Invalid job JSON format"
+                
+                # Validate extracted job JSON has meaningful content (not just placeholder "string" values)
+                title = job_json.get('title', '').strip() if job_json.get('title') else ''
+                company = job_json.get('company', '').strip() if job_json.get('company') else ''
+                description = job_json.get('description', '').strip() if job_json.get('description') else ''
+                
+                # Check if values are actual data (not empty and not "string" placeholder)
+                has_real_data = (
+                    (title and title.lower() != 'string') or
+                    (company and company.lower() != 'string') or
+                    (description and description.lower() != 'string')
+                )
+                
+                if not has_real_data:
+                    print(f"Warning: Extracted job JSON appears to contain only placeholder values")
+                    print(f"Title: '{title}', Company: '{company}', Description length: {len(description)}")
+                    # Don't cache placeholder results
+                    return job_json, False, "Step 1 completed: Job JSON extracted (may contain placeholder values - check extraction)"
+                
+                # Log the extracted job JSON for debugging
+                print(f"Extracted job JSON - Title: {job_json.get('title', 'N/A')}, Company: {job_json.get('company', 'N/A')}")
+                
+                # Cache the result
+                set_job_cache(job_text, job_json, config)
+                return job_json, False, "Step 1 completed: Job JSON extracted successfully"
+            except Exception as e:
+                print(f"Error in extract_job_json: {e}")
+                import traceback
+                traceback.print_exc()
+                return None, False, f"Step 1 failed: {str(e)}"
         
+        def extract_resume_json():
+            """Extract resume JSON with caching"""
+            try:
+                msg = "Starting Step 2: Extracting Resume JSON..."
+                # Read PDF
+                resume_text = read_pdf(resume_path)
+                if not resume_text:
+                    return None, False, "Step 2 failed: Failed to read resume PDF"
+                
+                # Check cache first
+                resume_json = get_resume_cache(resume_path, config)
+                if resume_json and isinstance(resume_json, dict):
+                    return resume_json, True, "Step 2 completed: Resume JSON loaded from cache"
+                
+                # Extract from PDF if not in cache
+                resume_json = structured_resume_prompt(resume_text, base_url, extraction_model)
+                if not resume_json:
+                    return None, False, "Step 2 failed: Failed to extract resume JSON"
+                if not isinstance(resume_json, dict):
+                    print(f"Error: structured_resume_prompt returned non-dict: {type(resume_json)}")
+                    return None, False, "Step 2 failed: Invalid resume JSON format"
+                # Cache the result
+                set_resume_cache(resume_path, resume_json, config)
+                return resume_json, False, "Step 2 completed: Resume JSON extracted successfully"
+            except Exception as e:
+                print(f"Error in extract_resume_json: {e}")
+                import traceback
+                traceback.print_exc()
+                return None, False, f"Step 2 failed: {str(e)}"
+        
+        # Run Steps 1 and 2 in parallel
+        results["messages"].append("Running Steps 1 and 2 in parallel...")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            job_future = executor.submit(extract_job_json)
+            resume_future = executor.submit(extract_resume_json)
+            
+            # Wait for both to complete
+            job_result = job_future.result()
+            resume_result = resume_future.result()
+            
+            # Unpack results
+            if len(job_result) == 3:
+                job_json, job_cached, job_msg = job_result
+            else:
+                # Fallback for old format
+                job_json, job_cached = job_result
+                job_msg = "Step 1 completed" if job_json else "Step 1 failed"
+            
+            if len(resume_result) == 3:
+                resume_json, resume_cached, resume_msg = resume_result
+            else:
+                # Fallback for old format
+                resume_json, resume_cached = resume_result
+                resume_msg = "Step 2 completed" if resume_json else "Step 2 failed"
+            
+            # Add messages after parallel execution completes (thread-safe)
+            results["messages"].append("Starting Step 1: Extracting Job JSON...")
+            results["messages"].append(job_msg)
+            # Extract step1 timing from message if available
+            if job_cached:
+                results["timings"]["step1"] = 0.01  # Cache hit is nearly instant
+            else:
+                # Try to extract time from message
+                time_match = re.search(r'\((\d+\.\d+)s\)', job_msg)
+                if time_match:
+                    results["timings"]["step1"] = float(time_match.group(1))
+            
+            results["messages"].append("Starting Step 2: Extracting Resume JSON...")
+            results["messages"].append(resume_msg)
+            # Extract step2 timing from message if available
+            if resume_cached:
+                results["timings"]["step2"] = 0.01  # Cache hit is nearly instant
+            else:
+                # Try to extract time from message
+                time_match = re.search(r'\((\d+\.\d+)s\)', resume_msg)
+                if time_match:
+                    results["timings"]["step2"] = float(time_match.group(1))
+        
+        # Check for errors and validate types
+        if not job_json:
+            return jsonify({"error": "Step 1 failed: Failed to extract job JSON", "results": results}), 500
+        if not resume_json:
+            return jsonify({"error": "Step 2 failed: Failed to extract resume JSON", "results": results}), 500
+        
+        # Validate that we got dictionaries, not strings
+        if isinstance(job_json, str):
+            print(f"Error: job_json is a string, not a dict. Value: {job_json[:200]}")
+            return jsonify({"error": "Step 1 failed: Invalid job JSON format", "results": results}), 500
+        if isinstance(resume_json, str):
+            print(f"Error: resume_json is a string, not a dict. Value: {resume_json[:200]}")
+            return jsonify({"error": "Step 2 failed: Invalid resume JSON format", "results": results}), 500
+        
+        if not isinstance(job_json, dict):
+            print(f"Error: job_json is not a dict, type: {type(job_json)}")
+            return jsonify({"error": "Step 1 failed: Invalid job JSON format", "results": results}), 500
+        if not isinstance(resume_json, dict):
+            print(f"Error: resume_json is not a dict, type: {type(resume_json)}")
+            return jsonify({"error": "Step 2 failed: Invalid resume JSON format", "results": results}), 500
+        
+        results["step1"] = job_json
         results["step2"] = resume_json
         
-        # Step 3: Match Analysis
-        results["messages"].append("Starting Step 3: Performing Match Analysis...")
+        # Step 3: Keyword Analysis
+        step3_start = time.time()
+        results["messages"].append("Starting Step 3: Performing Keyword Analysis...")
+        
+        # CRITICAL: Double-check types before any .get() calls
+        if not isinstance(job_json, dict):
+            print(f"CRITICAL ERROR: job_json is not a dict at Step 3 start, type: {type(job_json)}, value: {str(job_json)[:200]}")
+            return jsonify({"error": "Step 3 failed: Invalid job JSON format", "results": results}), 500
+        if not isinstance(resume_json, dict):
+            print(f"CRITICAL ERROR: resume_json is not a dict at Step 3 start, type: {type(resume_json)}, value: {str(resume_json)[:200]}")
+            return jsonify({"error": "Step 3 failed: Invalid resume JSON format", "results": results}), 500
+        
         job_keywords = job_json.get('keywords', []) if isinstance(job_json, dict) else []
         resume_keywords = resume_json.get('keywords', []) if isinstance(resume_json, dict) else []
         
         # Extract keywords from job title (critical for technical roles)
         if isinstance(job_json, dict) and 'title' in job_json:
-            title = job_json['title'].lower()
+            title_value = job_json.get('title', '')
+            if not isinstance(title_value, str):
+                title_value = str(title_value)
+            title = title_value.lower()
             # Extract technical terms from title (e.g., "Mainframe COBOL Developer" -> ["mainframe", "cobol"])
             title_words = title.split()
             for word in title_words:
@@ -941,13 +1308,16 @@ def run_full_analysis():
         
         # Also extract keywords from skills and requirements if available
         if isinstance(job_json, dict):
-            if 'skills' in job_json and isinstance(job_json['skills'], list):
+            if 'skills' in job_json and isinstance(job_json.get('skills'), list):
                 job_keywords.extend([s.lower() for s in job_json['skills'] if s])
-            if 'requirements' in job_json and isinstance(job_json['requirements'], list):
+            if 'requirements' in job_json and isinstance(job_json.get('requirements'), list):
                 job_keywords.extend([r.lower() for r in job_json['requirements'] if r])
             # Extract from description as well (look for technical terms)
             if 'description' in job_json:
-                desc = job_json['description'].lower()
+                desc = job_json.get('description', '')
+                if not isinstance(desc, str):
+                    desc = str(desc)
+                desc = desc.lower()
                 # Look for common technical terms in description
                 tech_terms_in_desc = ['cobol', 'mainframe', 'java', 'python', 'javascript', 'sql', 'oracle', 'db2', 'jcl', 'cics']
                 for term in tech_terms_in_desc:
@@ -955,9 +1325,11 @@ def run_full_analysis():
                         job_keywords.append(term)
         
         if isinstance(resume_json, dict):
-            if 'additional' in resume_json and 'technicalSkills' in resume_json['additional']:
-                if isinstance(resume_json['additional']['technicalSkills'], list):
-                    resume_keywords.extend([s.lower() for s in resume_json['additional']['technicalSkills'] if s])
+            additional = resume_json.get('additional', {})
+            if isinstance(additional, dict) and 'technicalSkills' in additional:
+                tech_skills = additional.get('technicalSkills', [])
+                if isinstance(tech_skills, list):
+                    resume_keywords.extend([s.lower() for s in tech_skills if s])
         
         # Remove duplicates and normalize
         job_keywords = list(set([k.lower().strip() for k in job_keywords if k]))
@@ -970,8 +1342,21 @@ def run_full_analysis():
             job_keywords, resume_keywords,
             base_url, model
         )
+        step3_time = time.time() - step3_start
+        
+        # Validate analysis_json is a dict
         if not analysis_json:
-            return jsonify({"error": "Step 3 failed: Failed to generate analysis", "results": results}), 500
+            return jsonify({"error": f"Step 3 failed: Failed to generate analysis ({step3_time:.2f}s)", "results": results}), 500
+        
+        if isinstance(analysis_json, str):
+            print(f"Error: analysis_json is a string, not a dict. Value: {analysis_json[:200]}")
+            return jsonify({"error": f"Step 3 failed: Invalid analysis JSON format ({step3_time:.2f}s)", "results": results}), 500
+        
+        if not isinstance(analysis_json, dict):
+            print(f"Error: analysis_json is not a dict, type: {type(analysis_json)}")
+            return jsonify({"error": f"Step 3 failed: Invalid analysis JSON format ({step3_time:.2f}s)", "results": results}), 500
+        
+        results["timings"]["step3"] = step3_time
         
         # Ensure keywords section exists and is valid (fallback if AI doesn't provide it or provides incorrect data)
         if 'keywords' not in analysis_json or not analysis_json['keywords']:
@@ -1001,9 +1386,28 @@ def run_full_analysis():
         else:
             # Validate that missing keywords are actually from the job, not the resume
             # If AI returned incorrect data, recalculate
-            keywords_data = analysis_json.get('keywords', {})
-            missing_from_ai = keywords_data.get('missing', [])
-            matching_from_ai = keywords_data.get('matching', [])
+            keywords_data = analysis_json.get('keywords', {}) if isinstance(analysis_json, dict) else {}
+            if not isinstance(keywords_data, dict):
+                keywords_data = {}
+            missing_from_ai = keywords_data.get('missing', []) if isinstance(keywords_data, dict) else []
+            matching_from_ai = keywords_data.get('matching', []) if isinstance(keywords_data, dict) else []
+            
+            # Filter out placeholder strings like "string", "string (description)", etc.
+            def is_valid_keyword(kw):
+                if not isinstance(kw, str):
+                    return False
+                kw_lower = kw.lower().strip()
+                # Filter out placeholder text
+                if kw_lower in ['string', 'string (description)', 'string (keywords)', 'example', 'placeholder']:
+                    return False
+                # Filter out strings that are clearly schema descriptions
+                if 'string (' in kw_lower or '(string' in kw_lower:
+                    return False
+                # Must be a real keyword (at least 2 characters, not just whitespace)
+                return len(kw_lower) >= 2
+            
+            missing_from_ai = [kw for kw in missing_from_ai if is_valid_keyword(kw)]
+            matching_from_ai = [kw for kw in matching_from_ai if is_valid_keyword(kw)]
             
             # Normalize job and resume keywords for comparison
             job_keywords_normalized = [k.lower().strip() for k in job_keywords]
@@ -1077,15 +1481,20 @@ def run_full_analysis():
                 }
         
         # Final pass: filter out any remaining soft skills that might have slipped through
-        if 'keywords' in analysis_json:
-            final_matching = [kw for kw in analysis_json['keywords'].get('matching', []) if not is_soft_skill(kw)]
-            final_missing = [kw for kw in analysis_json['keywords'].get('missing', []) if not is_soft_skill(kw)]
-            analysis_json['keywords'] = {
-                'matching': final_matching[:20],
-                'missing': final_missing[:20]
-            }
+        if isinstance(analysis_json, dict) and 'keywords' in analysis_json:
+            keywords_section = analysis_json['keywords']
+            if isinstance(keywords_section, dict):
+                final_matching = [kw for kw in keywords_section.get('matching', []) if not is_soft_skill(kw)]
+                final_missing = [kw for kw in keywords_section.get('missing', []) if not is_soft_skill(kw)]
+                analysis_json['keywords'] = {
+                    'matching': final_matching[:20],
+                    'missing': final_missing[:20]
+                }
         
         # Ensure overallFit is always present with fallback values
+        if not isinstance(analysis_json, dict):
+            analysis_json = {'keywords': {'matching': [], 'missing': []}, 'overallFit': {}}
+        
         if 'overallFit' not in analysis_json or not analysis_json.get('overallFit'):
             analysis_json['overallFit'] = {
                 'details': 'Overall fit assessment is being generated. Please review the keyword analysis and improvements below.',
@@ -1099,27 +1508,55 @@ def run_full_analysis():
                 analysis_json['overallFit']['commentary'] = 'Focus on implementing the suggested improvements to strengthen your application.'
         
         results["step3"] = analysis_json
-        results["messages"].append("Step 3 completed: Match analysis generated successfully")
+        results["messages"].append(f"Step 3 completed: Keyword analysis generated successfully ({step3_time:.2f}s)")
         
         # Step 4: Generate Improvements Based on Keyword Analysis
+        step4_start = time.time()
         results["messages"].append("Starting Step 4: Generating Improvements...")
         improvements_result = resume_improvement_prompt(
             job_text, job_json, resume_json, analysis_json, base_url, model
         )
-        if improvements_result:
-            results["step4"] = improvements_result
-            results["messages"].append("Step 4 completed: Improvements generated successfully")
-        else:
-            results["messages"].append("Step 4 completed with warnings: Improvements may have failed")
+        step4_time = time.time() - step4_start
         
-        results["messages"].append("All steps completed successfully!")
+        # Validate improvements_result is a dict if it exists
+        if improvements_result:
+            if isinstance(improvements_result, str):
+                print(f"Error: improvements_result is a string, not a dict. Value: {improvements_result[:200]}")
+                improvements_result = None  # Treat as failed
+            elif not isinstance(improvements_result, dict):
+                print(f"Error: improvements_result is not a dict, type: {type(improvements_result)}")
+                improvements_result = None  # Treat as failed
+        
+        results["timings"]["step4"] = step4_time
+        if improvements_result and isinstance(improvements_result, dict):
+            results["step4"] = improvements_result
+            results["messages"].append(f"Step 4 completed: Improvements generated successfully ({step4_time:.2f}s)")
+        else:
+            results["messages"].append(f"Step 4 completed with warnings: Improvements may have failed ({step4_time:.2f}s)")
+        
+        # Calculate total time
+        total_time = time.time() - analysis_start_time
+        results["timings"]["total"] = total_time
+        results["messages"].append(f"All steps completed successfully! Total time: {total_time:.2f}s")
+        print(f"Analysis completed in {total_time:.2f}s (Step 1: {results['timings'].get('step1', 'N/A')}s, Step 2: {results['timings'].get('step2', 'N/A')}s, Step 3: {step3_time:.2f}s, Step 4: {step4_time:.2f}s)")
         
         # Combine Step 3 (keywords) and Step 4 (improvements) for history
+        # Ensure all values are safe to access
+        keywords_section = analysis_json.get('keywords', {}) if isinstance(analysis_json, dict) else {}
+        overall_fit = {}
+        improvements_list = []
+        aspirational_improvements = []
+        
+        if improvements_result and isinstance(improvements_result, dict):
+            overall_fit = improvements_result.get('overallFit', {}) if isinstance(improvements_result.get('overallFit'), dict) else {}
+            improvements_list = improvements_result.get('improvements', []) if isinstance(improvements_result.get('improvements'), list) else []
+            aspirational_improvements = improvements_result.get('aspirationalImprovements', []) if isinstance(improvements_result.get('aspirationalImprovements'), list) else []
+        
         combined_analysis = {
-            "keywords": analysis_json.get('keywords', {}),
-            "overallFit": improvements_result.get('overallFit', {}) if improvements_result else {},
-            "improvements": improvements_result.get('improvements', []) if improvements_result else [],
-            "aspirationalImprovements": improvements_result.get('aspirationalImprovements', []) if improvements_result else []
+            "keywords": keywords_section if isinstance(keywords_section, dict) else {},
+            "overallFit": overall_fit,
+            "improvements": improvements_list,
+            "aspirationalImprovements": aspirational_improvements
         }
         
         # Save analysis to history
@@ -1136,7 +1573,16 @@ def run_full_analysis():
             print(f"Warning: Failed to save analysis to history: {e}")
         
         return jsonify({"success": True, "results": results}), 200
+    except AttributeError as e:
+        if "'str' object has no attribute 'get'" in str(e) or "'str' object has no attribute" in str(e):
+            print(f"CRITICAL ERROR in run_full_analysis: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": f"Type error: Attempted to call .get() on a string. This should never happen. Full error: {str(e)}"}), 500
+        raise
     except Exception as e:
         print(f"Error in run_full_analysis: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 

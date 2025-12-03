@@ -102,6 +102,19 @@ def verify_db_schema(config_dict):
         """)
         conn.commit()
         print("Verified resume_cache table exists")
+        
+        # Create job_cache table if it doesn't exist
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS job_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_description_hash TEXT NOT NULL UNIQUE,
+                job_json TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+        print("Verified job_cache table exists")
     finally:
         close_db_connection(conn)
 

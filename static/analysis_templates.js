@@ -164,50 +164,83 @@ const AnalysisTemplates = {
     formatJobJSON: function(job) {
         if (!job) return '<p style="color: #999;">No job data available</p>';
         
+        // Helper function to clean placeholder "string" values
+        const cleanValue = (value) => {
+            if (!value) return null;
+            if (typeof value === 'string' && value.toLowerCase().trim() === 'string') {
+                return null; // Treat "string" placeholder as empty
+            }
+            return value.trim() || null;
+        };
+        
         const parts = [];
         
         // Title and Company
+        const title = cleanValue(job.title);
+        const company = cleanValue(job.company);
+        
         parts.push(`<div class="result-section" style="margin-bottom: 20px;">`);
-        parts.push(`<h3 style="color: #4CAF50; margin: 0 0 10px 0; font-size: 20px;">${this.escapeHtml(job.title || 'N/A')}</h3>`);
-        parts.push(`<p style="color: #666; margin: 5px 0; font-size: 16px;"><strong>Company:</strong> ${this.escapeHtml(job.company || 'N/A')}</p>`);
+        parts.push(`<h3 style="color: #4CAF50; margin: 0 0 10px 0; font-size: 20px;">${this.escapeHtml(title || 'N/A')}</h3>`);
+        parts.push(`<p style="color: #666; margin: 5px 0; font-size: 16px;"><strong>Company:</strong> ${this.escapeHtml(company || 'N/A')}</p>`);
         parts.push(`</div>`);
         
         // Key Details
+        const location = cleanValue(job.location);
+        const employmentType = cleanValue(job.employmentType);
+        const salary = cleanValue(job.salary);
+        const experience = cleanValue(job.experience);
+        const education = cleanValue(job.education);
+        
         parts.push(`<div class="result-section" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">`);
-        if (job.location) parts.push(`<p style="margin: 5px 0;"><strong>📍 Location:</strong> ${this.escapeHtml(job.location)}</p>`);
-        if (job.employmentType) parts.push(`<p style="margin: 5px 0;"><strong>💼 Type:</strong> ${this.escapeHtml(job.employmentType)}</p>`);
-        if (job.salary) parts.push(`<p style="margin: 5px 0;"><strong>💰 Salary:</strong> ${this.escapeHtml(job.salary)}</p>`);
-        if (job.experience) parts.push(`<p style="margin: 5px 0;"><strong>📊 Experience:</strong> ${this.escapeHtml(job.experience)}</p>`);
-        if (job.education) parts.push(`<p style="margin: 5px 0;"><strong>🎓 Education:</strong> ${this.escapeHtml(job.education)}</p>`);
+        if (location) parts.push(`<p style="margin: 5px 0;"><strong>📍 Location:</strong> ${this.escapeHtml(location)}</p>`);
+        if (employmentType) parts.push(`<p style="margin: 5px 0;"><strong>💼 Type:</strong> ${this.escapeHtml(employmentType)}</p>`);
+        if (salary) parts.push(`<p style="margin: 5px 0;"><strong>💰 Salary:</strong> ${this.escapeHtml(salary)}</p>`);
+        if (experience) parts.push(`<p style="margin: 5px 0;"><strong>📊 Experience:</strong> ${this.escapeHtml(experience)}</p>`);
+        if (education) parts.push(`<p style="margin: 5px 0;"><strong>🎓 Education:</strong> ${this.escapeHtml(education)}</p>`);
         parts.push(`</div>`);
         
-        // Skills
-        if (job.skills && job.skills.length > 0) {
-            parts.push(`<div class="result-section" style="margin-bottom: 20px;">`);
-            parts.push(`<h4 style="color: #333; margin-bottom: 10px;">Skills Required:</h4>`);
-            parts.push(`<div style="display: flex; flex-wrap: wrap; gap: 8px;">`);
-            job.skills.forEach(skill => {
-                parts.push(`<span style="background: #4CAF50; color: white; padding: 5px 12px; border-radius: 15px; font-size: 13px;">${this.escapeHtml(skill)}</span>`);
-            });
-            parts.push(`</div></div>`);
+        // Skills - filter out "string" placeholders
+        if (job.skills && Array.isArray(job.skills) && job.skills.length > 0) {
+            const validSkills = job.skills
+                .filter(skill => skill && typeof skill === 'string' && skill.toLowerCase().trim() !== 'string')
+                .map(skill => skill.trim())
+                .filter(skill => skill.length > 0);
+            
+            if (validSkills.length > 0) {
+                parts.push(`<div class="result-section" style="margin-bottom: 20px;">`);
+                parts.push(`<h4 style="color: #333; margin-bottom: 10px;">Skills Required:</h4>`);
+                parts.push(`<div style="display: flex; flex-wrap: wrap; gap: 8px;">`);
+                validSkills.forEach(skill => {
+                    parts.push(`<span style="background: #4CAF50; color: white; padding: 5px 12px; border-radius: 15px; font-size: 13px;">${this.escapeHtml(skill)}</span>`);
+                });
+                parts.push(`</div></div>`);
+            }
         }
         
-        // Requirements
-        if (job.requirements && job.requirements.length > 0) {
-            parts.push(`<div class="result-section" style="margin-bottom: 20px;">`);
-            parts.push(`<h4 style="color: #333; margin-bottom: 10px;">Requirements:</h4>`);
-            parts.push(`<ul style="margin: 0; padding-left: 20px; line-height: 1.8;">`);
-            job.requirements.forEach(req => {
-                parts.push(`<li style="margin-bottom: 8px; color: #555;">${this.escapeHtml(req)}</li>`);
-            });
-            parts.push(`</ul></div>`);
+        // Requirements - filter out "string" placeholders
+        if (job.requirements && Array.isArray(job.requirements) && job.requirements.length > 0) {
+            const validRequirements = job.requirements
+                .filter(req => req && typeof req === 'string' && req.toLowerCase().trim() !== 'string')
+                .map(req => req.trim())
+                .filter(req => req.length > 0);
+            
+            if (validRequirements.length > 0) {
+                parts.push(`<div class="result-section" style="margin-bottom: 20px;">`);
+                parts.push(`<h4 style="color: #333; margin-bottom: 10px;">Requirements:</h4>`);
+                parts.push(`<ul style="margin: 0; padding-left: 20px; line-height: 1.8;">`);
+                validRequirements.forEach(req => {
+                    parts.push(`<li style="margin-bottom: 8px; color: #555;">${this.escapeHtml(req)}</li>`);
+                });
+                parts.push(`</ul></div>`);
+            }
         }
         
         // Description
-        if (job.description) {
+        const description = cleanValue(job.description);
+        if (description) {
             parts.push(`<div class="result-section" style="margin-bottom: 20px;">`);
             parts.push(`<h4 style="color: #333; margin-bottom: 10px;">Description:</h4>`);
-            parts.push(`<div style="color: #555; line-height: 1.6; max-height: 300px; overflow-y: auto; padding: 10px; background: #f8f9fa; border-radius: 5px;">${this.escapeHtml(job.description).replace(/\n/g, '<br>')}</div>`);
+            parts.push(`<div style="color: #555; line-height: 1.6; max-height: 300px; overflow-y: auto; padding: 10px; background: #f8f9fa; border-radius: 5px;">${this.escapeHtml(description).replace(/\n/g, '<br>')}</div>`);
             parts.push(`</div>`);
         }
         
@@ -392,6 +425,11 @@ const AnalysisTemplates = {
      */
     formatImprovements: function(analysis) {
         if (!analysis) return '<p style="color: #999;">No improvements data available</p>';
+        
+        // Debug logging
+        console.log('formatImprovements called with:', analysis);
+        console.log('improvements array:', analysis.improvements);
+        console.log('aspirationalImprovements array:', analysis.aspirationalImprovements);
         
         const parts = [];
         

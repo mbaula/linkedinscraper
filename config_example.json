@@ -70,6 +70,7 @@
   "delete_unapplied_jobs_after_days": 0,
   "app_table": "jobs",
   "ollama_model": "llama3.2:latest",
+  "ollama_extraction_model": "llama3.2:1b",
   "ollama_base_url": "http://localhost:11434",
   "cover_letter_provider": "ollama",
   "groq_api_key": ""

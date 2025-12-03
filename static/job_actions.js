@@ -1642,22 +1642,31 @@ async function openAnalysisModal(jobId) {
     html = html.replace('<select id="analysis-model-selector" style="width: 100%; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; background-color: white;">', 
                         '<select id="analysis-model-selector" style="width: 100%; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; background-color: white;">' + modelOptions);
     
-    // Set up button click handler
-    html = html.replace('id="run-full-analysis-btn"', `id="run-full-analysis-btn" onclick="runFullAnalysis(${jobId})"`);
+    // Set up button click handler - use event listener only (no onclick attribute to avoid double-firing)
+    html = html.replace('id="run-full-analysis-btn"', `id="run-full-analysis-btn"`);
     
     modalContent.innerHTML = html;
     modal.style.display = 'block';
     
-    // Also set up event listener as fallback (in case onclick doesn't work)
+    // Set up event listener (only one handler to prevent double-firing)
     setTimeout(function() {
         const runButton = document.getElementById('run-full-analysis-btn');
         if (runButton) {
-            // Remove any existing listeners
+            // Remove any existing listeners by cloning the button
             const newButton = runButton.cloneNode(true);
             runButton.parentNode.replaceChild(newButton, runButton);
-            // Add new listener
+            
+            // Add single event listener
             newButton.addEventListener('click', function(e) {
                 e.preventDefault();
+                e.stopPropagation();
+                
+                // Prevent double-clicks
+                if (newButton.disabled) {
+                    console.log('Button already clicked, ignoring duplicate click');
+                    return;
+                }
+                
                 console.log('Button clicked via event listener, jobId:', jobId);
                 runFullAnalysis(jobId);
             });
@@ -1990,6 +1999,12 @@ async function runFullAnalysis(jobId) {
     const progressMessages = document.getElementById('progress-messages');
     const resultsDiv = document.getElementById('analysis-results');
     
+    // Prevent double-execution
+    if (runButton && runButton.disabled) {
+        console.log('Analysis already running, ignoring duplicate call');
+        return;
+    }
+    
     if (!resumeSelector || !resumeSelector.value) {
         alert('Please select a resume first');
         return;
@@ -2066,6 +2081,10 @@ async function runFullAnalysis(jobId) {
             
             // Display results
             if (result.results.step1) {
+                console.log('Step 1 job JSON received:', result.results.step1);
+                console.log('Step 1 job JSON keys:', Object.keys(result.results.step1 || {}));
+                console.log('Step 1 job JSON title:', result.results.step1?.title);
+                console.log('Step 1 job JSON company:', result.results.step1?.company);
                 showPipelineResult(1, result.results.step1);
             }
             if (result.results.step2) {
@@ -2075,6 +2094,9 @@ async function runFullAnalysis(jobId) {
                 showPipelineResult(3, result.results.step3);
             }
             if (result.results.step4) {
+                console.log('Step 4 data received:', result.results.step4);
+                console.log('Step 4 improvements count:', result.results.step4?.improvements?.length || 0);
+                console.log('Step 4 aspirationalImprovements count:', result.results.step4?.aspirationalImprovements?.length || 0);
                 showPipelineResult(4, result.results.step4);
             }
             
