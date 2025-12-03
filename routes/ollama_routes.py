@@ -178,23 +178,35 @@ def set_resume_cache(resume_path, resume_json, config):
         print(f"Error caching resume: {e}")
 
 
-def get_job_cache(job_description, config):
+def get_job_cache(job_description, config, job_title=None, job_company=None):
     """
     Get cached job JSON if it exists.
+    Uses composite key: job_title + job_company + job_description
     Returns job_json if cache is valid, None otherwise.
     """
     if not job_description:
         return None
     
     try:
-        # Create hash of job description
-        job_hash = hashlib.md5(job_description.encode('utf-8')).hexdigest()
+        # Create composite hash from title, company, and description
+        # Normalize empty strings to None for consistent hashing
+        title_str = (job_title or '').strip() if job_title else ''
+        company_str = (job_company or '').strip() if job_company else ''
+        desc_str = job_description.strip() if job_description else ''
+        
+        # Create individual hashes
+        title_hash = hashlib.md5(title_str.encode('utf-8')).hexdigest()
+        company_hash = hashlib.md5(company_str.encode('utf-8')).hexdigest()
+        desc_hash = hashlib.md5(desc_str.encode('utf-8')).hexdigest()
+        
+        # Composite cache key: title_hash_company_hash_desc_hash
+        cache_key = f"{title_hash}_{company_hash}_{desc_hash}"
         
         conn = sqlite3.connect(config["db_path"])
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT job_json FROM job_cache WHERE job_description_hash = ?",
-            (job_hash,)
+            "SELECT job_json FROM job_cache WHERE cache_key = ?",
+            (cache_key,)
         )
         row = cursor.fetchone()
         conn.close()
@@ -208,24 +220,36 @@ def get_job_cache(job_description, config):
         return None
 
 
-def set_job_cache(job_description, job_json, config):
+def set_job_cache(job_description, job_json, config, job_title=None, job_company=None):
     """
     Store job JSON in cache.
+    Uses composite key: job_title + job_company + job_description
     """
     if not job_description:
         return
     
     try:
-        # Create hash of job description
-        job_hash = hashlib.md5(job_description.encode('utf-8')).hexdigest()
+        # Create composite hash from title, company, and description
+        # Normalize empty strings to None for consistent hashing
+        title_str = (job_title or '').strip() if job_title else ''
+        company_str = (job_company or '').strip() if job_company else ''
+        desc_str = job_description.strip() if job_description else ''
+        
+        # Create individual hashes
+        title_hash = hashlib.md5(title_str.encode('utf-8')).hexdigest()
+        company_hash = hashlib.md5(company_str.encode('utf-8')).hexdigest()
+        desc_hash = hashlib.md5(desc_str.encode('utf-8')).hexdigest()
+        
+        # Composite cache key: title_hash_company_hash_desc_hash
+        cache_key = f"{title_hash}_{company_hash}_{desc_hash}"
         
         conn = sqlite3.connect(config["db_path"])
         cursor = conn.cursor()
         cursor.execute(
             """INSERT OR REPLACE INTO job_cache 
-               (job_description_hash, job_json, updated_at) 
-               VALUES (?, ?, CURRENT_TIMESTAMP)""",
-            (job_hash, json.dumps(job_json))
+               (cache_key, job_title_hash, job_company_hash, job_description_hash, job_json, updated_at) 
+               VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)""",
+            (cache_key, title_hash, company_hash, desc_hash, json.dumps(job_json))
         )
         conn.commit()
         conn.close()
@@ -1247,33 +1271,89 @@ def run_full_analysis():
             """Extract job JSON with caching"""
             try:
                 msg = "Starting Step 1: Extracting Job JSON..."
-                # Check cache first
-                job_json = get_job_cache(job_text, config)
+                # Check cache first - but validate it matches this specific job
+                job_json = get_job_cache(job_text, config, job_title=job_title, job_company=job_company)
                 if job_json and isinstance(job_json, dict):
                     # Validate cached job JSON has meaningful content (not placeholder "string" values)
-                    title = (job_json.get('title') or '').strip()
-                    company = (job_json.get('company') or '').strip()
+                    cached_title = (job_json.get('title') or '').strip()
+                    cached_company = (job_json.get('company') or '').strip()
                     description = (job_json.get('description') or '').strip()
+                    
+                    # CRITICAL: Validate that cached data matches this specific job's title and company
+                    # This prevents using cache from a different job with similar description
+                    title_matches = True
+                    company_matches = True
+                    
+                    if job_title and cached_title:
+                        # Both exist - they must match (case-insensitive)
+                        if cached_title.lower() != job_title.lower():
+                            title_matches = False
+                            print(f"Cache mismatch: Cached title '{cached_title}' doesn't match job title '{job_title}'")
+                    elif job_title and not cached_title:
+                        # Job has title but cache doesn't - mismatch
+                        title_matches = False
+                        print(f"Cache mismatch: Job has title '{job_title}' but cache doesn't")
+                    elif not job_title and cached_title:
+                        # Cache has title but job doesn't - might be okay, but be cautious
+                        pass
+                    
+                    if job_company and cached_company:
+                        # Both exist - they must match (case-insensitive)
+                        if cached_company.lower() != job_company.lower():
+                            company_matches = False
+                            print(f"Cache mismatch: Cached company '{cached_company}' doesn't match job company '{job_company}'")
+                    elif job_company and not cached_company:
+                        # Job has company but cache doesn't - mismatch
+                        company_matches = False
+                        print(f"Cache mismatch: Job has company '{job_company}' but cache doesn't")
+                    elif not job_company and cached_company:
+                        # Cache has company but job doesn't - might be okay, but be cautious
+                        pass
+                    
+                    # Only use cache if title and company match (or both are missing)
+                    if not title_matches or not company_matches:
+                        print("Warning: Cached job JSON doesn't match current job metadata, re-extracting...")
+                        # Clear the mismatched cache entry using composite key
+                        title_str = (job_title or '').strip() if job_title else ''
+                        company_str = (job_company or '').strip() if job_company else ''
+                        desc_str = job_text.strip() if job_text else ''
+                        title_hash = hashlib.md5(title_str.encode('utf-8')).hexdigest()
+                        company_hash = hashlib.md5(company_str.encode('utf-8')).hexdigest()
+                        desc_hash = hashlib.md5(desc_str.encode('utf-8')).hexdigest()
+                        cache_key = f"{title_hash}_{company_hash}_{desc_hash}"
+                        conn = sqlite3.connect(config["db_path"])
+                        cursor = conn.cursor()
+                        cursor.execute("DELETE FROM job_cache WHERE cache_key = ?", (cache_key,))
+                        conn.commit()
+                        conn.close()
+                        job_json = None  # Force re-extraction
                     
                     # Check if values are actual data (not empty and not "string" placeholder)
                     has_real_data = (
-                        (title and title.lower() != 'string') or
-                        (company and company.lower() != 'string') or
+                        (cached_title and cached_title.lower() != 'string') or
+                        (cached_company and cached_company.lower() != 'string') or
                         (description and description.lower() != 'string')
                     )
                     
-                    if has_real_data:
+                    if job_json and has_real_data and title_matches and company_matches:
                         return job_json, True, "Step 1 completed: Job JSON loaded from cache"
-                    else:
+                    elif job_json:
                         # Cached version is empty or has placeholder values, clear it and re-extract
                         print("Warning: Cached job JSON is empty or contains placeholder values, re-extracting...")
-                        # Clear the cache
-                        job_hash = hashlib.md5(job_text.encode('utf-8')).hexdigest()
+                        # Clear the cache using composite key
+                        title_str = (job_title or '').strip() if job_title else ''
+                        company_str = (job_company or '').strip() if job_company else ''
+                        desc_str = job_text.strip() if job_text else ''
+                        title_hash = hashlib.md5(title_str.encode('utf-8')).hexdigest()
+                        company_hash = hashlib.md5(company_str.encode('utf-8')).hexdigest()
+                        desc_hash = hashlib.md5(desc_str.encode('utf-8')).hexdigest()
+                        cache_key = f"{title_hash}_{company_hash}_{desc_hash}"
                         conn = sqlite3.connect(config["db_path"])
                         cursor = conn.cursor()
-                        cursor.execute("DELETE FROM job_cache WHERE job_description_hash = ?", (job_hash,))
+                        cursor.execute("DELETE FROM job_cache WHERE cache_key = ?", (cache_key,))
                         conn.commit()
                         conn.close()
+                        job_json = None  # Force re-extraction
                 
                 # Extract from job text if not in cache (pass title/company/location from database)
                 job_json = structured_job_prompt(job_text, base_url, extraction_model, 
@@ -1323,8 +1403,10 @@ def run_full_analysis():
                 # Log the extracted job JSON for debugging
                 print(f"Extracted job JSON - Title: {job_json.get('title', 'N/A')}, Company: {job_json.get('company', 'N/A')}")
                 
-                # Cache the result
-                set_job_cache(job_text, job_json, config)
+                # Cache the result (use extracted title/company, fallback to database values)
+                cache_title = job_json.get('title', '') or job_title or ''
+                cache_company = job_json.get('company', '') or job_company or ''
+                set_job_cache(job_text, job_json, config, job_title=cache_title, job_company=cache_company)
                 return job_json, False, "Step 1 completed: Job JSON extracted successfully"
             except Exception as e:
                 print(f"Error in extract_job_json: {e}")
@@ -1485,18 +1567,69 @@ def run_full_analysis():
         job_keywords = list(set([k.lower().strip() for k in job_keywords if k]))
         resume_keywords = list(set([k.lower().strip() for k in resume_keywords if k]))
         
-        # Check cache first
-        analysis_json = get_keyword_analysis_cache(job_text, resume_path, config)
+        # Check cache first - ONLY if cache table exists and entry exists AND matches current job
+        analysis_json = None
         cached = False
-        if analysis_json and isinstance(analysis_json, dict):
-            # Validate cached analysis has meaningful content
-            if analysis_json.get('keywords') and isinstance(analysis_json.get('keywords'), dict):
-                cached = True
-                print("Step 3: Using cached keyword analysis")
+        try:
+            # Verify cache table exists before trying to use it
+            conn = sqlite3.connect(config["db_path"])
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='keyword_analysis_cache'")
+            table_exists = cursor.fetchone() is not None
+            conn.close()
+            
+            if table_exists:
+                # Only check cache if table exists
+                cached_result = get_keyword_analysis_cache(job_text, resume_path, config)
+                if cached_result and isinstance(cached_result, dict):
+                    # CRITICAL: Validate that cached analysis matches this specific job
+                    # Check if cached analysis references the same job title/company
+                    cached_job_data = cached_result.get('job', {})
+                    if isinstance(cached_job_data, dict):
+                        cached_title = (cached_job_data.get('title') or '').strip()
+                        cached_company = (cached_job_data.get('company') or '').strip()
+                        
+                        # Validate title matches (if both exist)
+                        title_matches = True
+                        if job_title and cached_title:
+                            if cached_title.lower() != job_title.lower():
+                                title_matches = False
+                                print(f"Keyword cache mismatch: Cached title '{cached_title}' doesn't match job title '{job_title}'")
+                        elif job_title and not cached_title:
+                            title_matches = False
+                            print(f"Keyword cache mismatch: Job has title '{job_title}' but cache doesn't")
+                        
+                        # Validate company matches (if both exist)
+                        company_matches = True
+                        if job_company and cached_company:
+                            if cached_company.lower() != job_company.lower():
+                                company_matches = False
+                                print(f"Keyword cache mismatch: Cached company '{cached_company}' doesn't match job company '{job_company}'")
+                        elif job_company and not cached_company:
+                            company_matches = False
+                            print(f"Keyword cache mismatch: Job has company '{job_company}' but cache doesn't")
+                        
+                        # Only use cache if it matches this job
+                        if not title_matches or not company_matches:
+                            print("Warning: Cached keyword analysis doesn't match current job, re-analyzing...")
+                            cached_result = None
+                    
+                    # Validate cached analysis has meaningful content
+                    if cached_result and cached_result.get('keywords') and isinstance(cached_result.get('keywords'), dict):
+                        analysis_json = cached_result
+                        cached = True
+                        print("Step 3: Using cached keyword analysis")
+                    else:
+                        # Cached version is invalid, ignore it
+                        if cached_result:
+                            print("Warning: Cached keyword analysis is invalid, re-analyzing...")
+                        analysis_json = None
             else:
-                # Cached version is invalid, clear it and continue
-                print("Warning: Cached keyword analysis is invalid, re-analyzing...")
-                analysis_json = None
+                print("Step 3: Keyword analysis cache table does not exist, skipping cache check")
+        except Exception as e:
+            # If cache check fails for any reason, proceed without cache
+            print(f"Warning: Could not check keyword analysis cache: {e}")
+            analysis_json = None
         
         # If not cached or invalid, run the analysis
         if not analysis_json:

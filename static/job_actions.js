@@ -1719,6 +1719,22 @@ async function openAnalysisHistory(jobId) {
                         if (analysisData.step4) {
                             formattedHtml += AnalysisTemplates.getHistoryStepTemplate(4, 'hist-step4-' + index, 'Step 4: Resume Improvements', AnalysisTemplates.formatImprovements(analysisData.step4));
                         }
+                    } else if (analysisData.keywords || analysisData.overallFit || analysisData.improvements || analysisData.aspirationalImprovements) {
+                        // Combined analysis format (from run_full_analysis) - includes keywords, overallFit, improvements
+                        // Show Step 3: Keyword Analysis
+                        if (analysisData.keywords) {
+                            const keywordAnalysis = { keywords: analysisData.keywords };
+                            formattedHtml += AnalysisTemplates.getHistoryStepTemplate(3, 'hist-step3-' + index, 'Step 3: Keyword Analysis', formatMatchAnalysis(keywordAnalysis));
+                        }
+                        // Show Step 4: Resume Improvements (includes overallFit, improvements, aspirationalImprovements)
+                        if (analysisData.overallFit || analysisData.improvements || analysisData.aspirationalImprovements) {
+                            const improvementsData = {
+                                overallFit: analysisData.overallFit || {},
+                                improvements: analysisData.improvements || [],
+                                aspirationalImprovements: analysisData.aspirationalImprovements || []
+                            };
+                            formattedHtml += AnalysisTemplates.getHistoryStepTemplate(4, 'hist-step4-' + index, 'Step 4: Resume Improvements', AnalysisTemplates.formatImprovements(improvementsData));
+                        }
                     } else {
                         // Single analysis object - try to determine type
                         if (analysisData.title || analysisData.company) {

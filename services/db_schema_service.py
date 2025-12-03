@@ -1,6 +1,7 @@
 """
 Database schema service layer.
 """
+import sqlite3
 from utils.db_utils import get_db_connection, close_db_connection
 
 
@@ -107,12 +108,43 @@ def verify_db_schema(config_dict):
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS job_cache (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                job_description_hash TEXT NOT NULL UNIQUE,
+                cache_key TEXT NOT NULL UNIQUE,
+                job_title_hash TEXT,
+                job_company_hash TEXT,
+                job_description_hash TEXT,
                 job_json TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Migrate old schema if needed (add new columns if they don't exist)
+        cursor.execute("PRAGMA table_info(job_cache)")
+        table_info = cursor.fetchall()
+        column_names = [column[1] for column in table_info]
+        if "cache_key" not in column_names:
+            # Add new columns for composite key
+            try:
+                cursor.execute("ALTER TABLE job_cache ADD COLUMN cache_key TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column might already exist
+            try:
+                cursor.execute("ALTER TABLE job_cache ADD COLUMN job_title_hash TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                cursor.execute("ALTER TABLE job_cache ADD COLUMN job_company_hash TEXT")
+            except sqlite3.OperationalError:
+                pass
+            # Migrate existing data: set cache_key = job_description_hash for old entries
+            cursor.execute("UPDATE job_cache SET cache_key = job_description_hash WHERE cache_key IS NULL")
+            # Make cache_key unique (drop old unique constraint on job_description_hash if it exists)
+            try:
+                cursor.execute("DROP INDEX IF EXISTS idx_job_cache_desc_hash")
+            except:
+                pass
+            cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_job_cache_key ON job_cache(cache_key)")
+            conn.commit()
+            print("Migrated job_cache table to use composite cache key")
         conn.commit()
         print("Verified job_cache table exists")
         
