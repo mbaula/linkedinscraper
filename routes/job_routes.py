@@ -162,3 +162,22 @@ def mark_rejected(job_id):
     update_job_status(job_id, 'rejected', 1, config)
     return jsonify({"success": "Job marked as rejected"}), 200
 
+
+@job_bp.route('/unmark_rejected/<int:job_id>', methods=['POST'])
+def unmark_rejected(job_id):
+    """Unmark a job as rejected"""
+    config = current_app.config['CONFIG']
+    print("Unmark rejected clicked!")
+    print(f'Updating job_id: {job_id} to unmark rejected')
+    update_job_status(job_id, 'rejected', 0, config)
+    return jsonify({"success": "Job unmarked as rejected"}), 200
+
+
+@job_bp.route('/unmark_interview/<int:job_id>', methods=['POST'])
+def unmark_interview(job_id):
+    """Unmark a job as interview"""
+    config = current_app.config['CONFIG']
+    print("Unmark interview clicked!")
+    print(f'Updating job_id: {job_id} to unmark interview')
+    update_job_status(job_id, 'interview', 0, config)
+    return jsonify({"success": "Job unmarked as interview"}), 200

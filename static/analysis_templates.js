@@ -676,10 +676,10 @@ const AnalysisTemplates = {
         parts.push(`<div class="button-container" style="text-align:center">`);
         parts.push(`<a href="${this.escapeHtml(job.job_url)}" class="job-button" target="_blank" rel="noopener noreferrer">Go to job</a>`);
         parts.push(`<button class="job-button" onclick="markAsCoverLetter(${job.id})">Cover Letter</button>`);
-        parts.push(`<button class="job-button" onclick="markAsApplied(${job.id})">Applied</button>`);
-        parts.push(`<button class="job-button" onclick="markAsRejected(${job.id})">Rejected</button>`);
-        parts.push(`<button class="job-button" onclick="markAsInterview(${job.id})">Interview</button>`);
-        parts.push(`<button class="job-button" id="save-btn-${job.id}" onclick="toggleSaved(${job.id})">${job.saved ? 'Unsave' : 'Save'}</button>`);
+        parts.push(`<button class="job-button" id="applied-btn-${job.id}" onclick="toggleApplied(${job.id})">${job.applied == 1 ? 'Unmark Applied' : 'Mark Applied'}</button>`);
+        parts.push(`<button class="job-button" id="rejected-btn-${job.id}" onclick="toggleRejected(${job.id})">${job.rejected == 1 ? 'Unmark Rejected' : 'Mark Rejected'}</button>`);
+        parts.push(`<button class="job-button" id="interview-btn-${job.id}" onclick="toggleInterview(${job.id})">${job.interview == 1 ? 'Unmark Interview' : 'Mark Interview'}</button>`);
+        parts.push(`<button class="job-button" id="save-btn-${job.id}" onclick="toggleSaved(${job.id})">${job.saved == 1 ? 'Unsave' : 'Save'}</button>`);
         if (job.hidden == 1) {
             parts.push(`<button class="job-button" onclick="unhideJob(${job.id})">Unhide</button>`);
         } else {

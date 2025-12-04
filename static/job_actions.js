@@ -1,6 +1,8 @@
 var selectedJob = null;
 var previewTimeout = null;
 var currentPreviewJobId = null;
+var focusedJobIndex = -1;
+var visibleJobItems = [];
 
 // Dark Mode Functions
 function initDarkMode() {
@@ -165,6 +167,20 @@ function setupJobPreviewHover() {
                     hideJobPreview();
                 }
             });
+            
+            // Clear keyboard focus when clicking with mouse
+            jobItem.addEventListener('click', function() {
+                updateVisibleJobsList();
+                const jobIndex = visibleJobItems.indexOf(jobItem);
+                if (jobIndex >= 0) {
+                    focusedJobIndex = jobIndex;
+                    // Remove focus class from all jobs
+                    visibleJobItems.forEach(function(item) {
+                        item.classList.remove('job-item-focused');
+                    });
+                    jobItem.classList.add('job-item-focused');
+                }
+            });
         }
     });
     
@@ -178,6 +194,156 @@ function setupJobPreviewHover() {
         previewCard.addEventListener('mouseleave', function() {
             hideJobPreview();
         });
+    }
+}
+
+// Keyboard Navigation Functions
+function setupKeyboardNavigation() {
+    document.addEventListener('keydown', function(event) {
+        // Don't handle keyboard shortcuts when user is typing in inputs, textareas, or contenteditable elements
+        const activeElement = document.activeElement;
+        const isInputFocused = activeElement && (
+            activeElement.tagName === 'INPUT' ||
+            activeElement.tagName === 'TEXTAREA' ||
+            activeElement.isContentEditable ||
+            activeElement.tagName === 'SELECT'
+        );
+        
+        // Escape key - close modals/previews
+        if (event.key === 'Escape') {
+            hideJobPreview();
+            closeAllDropdowns();
+            // Close any open modals
+            const coverLetterModal = document.getElementById('cover-letter-modal');
+            const latexModal = document.getElementById('latex-modal');
+            const analysisModal = document.getElementById('analysis-modal');
+            const analysisHistoryModal = document.getElementById('analysis-history-modal');
+            
+            if (coverLetterModal && coverLetterModal.style.display === 'block') {
+                closeCoverLetterFullscreen();
+            }
+            if (latexModal && latexModal.style.display === 'block') {
+                closeLatexModal();
+            }
+            if (analysisModal && analysisModal.style.display === 'block') {
+                closeAnalysisModal();
+            }
+            if (analysisHistoryModal && analysisHistoryModal.style.display === 'block') {
+                closeAnalysisHistoryModal();
+            }
+            return;
+        }
+        
+        // If user is typing in an input, only handle Escape
+        if (isInputFocused && event.key !== 'Escape') {
+            return;
+        }
+        
+        // Update visible jobs list before navigation
+        updateVisibleJobsList();
+        
+        // Arrow keys - navigate jobs
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            navigateJobs(event.key === 'ArrowDown' ? 1 : -1);
+            return;
+        }
+        
+        // Enter or Space - view job details
+        if (event.key === 'Enter' || event.key === ' ') {
+            if (focusedJobIndex >= 0 && focusedJobIndex < visibleJobItems.length) {
+                event.preventDefault();
+                const jobId = visibleJobItems[focusedJobIndex].getAttribute('data-job-id');
+                if (jobId) {
+                    showJobDetails(jobId);
+                }
+            }
+            return;
+        }
+        
+        // Keyboard shortcuts (only when not typing)
+        if (!isInputFocused) {
+            // '/' or '?' - Focus search bar or show help
+            if ((event.key === '/' || event.key === '?') && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                event.preventDefault();
+                if (event.key === '?') {
+                    toggleKeyboardHelp();
+                } else {
+                    const searchBar = document.getElementById('search-bar');
+                    if (searchBar) {
+                        searchBar.focus();
+                        searchBar.select();
+                    }
+                }
+                return;
+            }
+        }
+    });
+    
+    // Update visible jobs list on initial load
+    setTimeout(updateVisibleJobsList, 500);
+}
+
+function navigateJobs(direction) {
+    if (visibleJobItems.length === 0) {
+        focusedJobIndex = -1;
+        return;
+    }
+    
+    // Remove previous focus
+    if (focusedJobIndex >= 0 && focusedJobIndex < visibleJobItems.length) {
+        visibleJobItems[focusedJobIndex].classList.remove('job-item-focused');
+    }
+    
+    // Calculate new index
+    if (focusedJobIndex === -1) {
+        // Start from first or last job
+        focusedJobIndex = direction > 0 ? 0 : visibleJobItems.length - 1;
+    } else {
+        focusedJobIndex += direction;
+        // Wrap around
+        if (focusedJobIndex < 0) {
+            focusedJobIndex = visibleJobItems.length - 1;
+        } else if (focusedJobIndex >= visibleJobItems.length) {
+            focusedJobIndex = 0;
+        }
+    }
+    
+    // Apply focus to new job
+    if (focusedJobIndex >= 0 && focusedJobIndex < visibleJobItems.length) {
+        const focusedJob = visibleJobItems[focusedJobIndex];
+        focusedJob.classList.add('job-item-focused');
+        
+        // Scroll into view
+        focusedJob.scrollIntoView({
+            behavior: 'smooth',
+            block: 'nearest'
+        });
+        
+        // Show preview after a short delay
+        const jobId = focusedJob.getAttribute('data-job-id');
+        if (jobId) {
+            setTimeout(function() {
+                // Create a synthetic event for preview
+                const syntheticEvent = {
+                    currentTarget: focusedJob
+                };
+                showJobPreview(syntheticEvent, jobId);
+            }, 300);
+        }
+    }
+}
+
+function updateVisibleJobsList() {
+    // Get all visible (not hidden) job items
+    const allJobItems = document.querySelectorAll('.job-item');
+    visibleJobItems = Array.from(allJobItems).filter(function(jobItem) {
+        return !jobItem.classList.contains('hidden');
+    });
+    
+    // Reset focused index if current focus is out of bounds
+    if (focusedJobIndex >= visibleJobItems.length) {
+        focusedJobIndex = -1;
     }
 }
 
@@ -314,6 +480,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Set up job preview hover events
     setupJobPreviewHover();
     
+    // Set up keyboard navigation
+    setupKeyboardNavigation();
+    
     // Re-setup hover events after filters are applied (jobs might be reordered)
     // Hook into sortJobs function to re-setup hover after sorting
     const originalSortJobs = sortJobs;
@@ -321,6 +490,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const result = originalSortJobs.apply(this, arguments);
         // Re-setup hover after a short delay to allow DOM updates
         setTimeout(setupJobPreviewHover, 50);
+        // Update visible jobs list for keyboard navigation
+        updateVisibleJobsList();
         return result;
     };
     
@@ -1082,6 +1253,22 @@ function applyAllFilters() {
     if (visibleJobs.length > 0) {
         sortJobs(visibleJobs, sortBy);
     }
+    
+    // Update visible jobs list for keyboard navigation
+    updateVisibleJobsList();
+}
+
+function updateVisibleJobsList() {
+    // Get all visible (not hidden) job items
+    const allJobItems = document.querySelectorAll('.job-item');
+    visibleJobItems = Array.from(allJobItems).filter(function(jobItem) {
+        return !jobItem.classList.contains('hidden');
+    });
+    
+    // Reset focused index if current focus is out of bounds
+    if (focusedJobIndex >= visibleJobItems.length) {
+        focusedJobIndex = -1;
+    }
 }
 
 function sortJobs(jobItems, sortOption) {
@@ -1164,6 +1351,18 @@ async function showJobDetails(jobId) {
     var newSelectedJob = document.querySelector(`.job-item[data-job-id="${jobId}"]`);
     newSelectedJob.classList.add('job-item-selected');
     selectedJob = newSelectedJob;
+    
+    // Update focused index to match selected job
+    updateVisibleJobsList();
+    const jobIndex = visibleJobItems.indexOf(newSelectedJob);
+    if (jobIndex >= 0) {
+        focusedJobIndex = jobIndex;
+        // Remove focus class from all jobs, add to selected
+        visibleJobItems.forEach(function(item) {
+            item.classList.remove('job-item-focused');
+        });
+        newSelectedJob.classList.add('job-item-focused');
+    }
 
     const response = await fetch('/job_details/' + jobId);
     const jobData = await response.json();
@@ -1485,28 +1684,70 @@ async function saveOllamaModelToConfig(model) {
 }
 
 
-function markAsApplied(jobId) {
-    console.log('Marking job as applied: ' + jobId)
-    fetch('/mark_applied/' + jobId, { method: 'POST' })
+function toggleApplied(jobId) {
+    var jobCard = document.querySelector(`.job-item[data-job-id="${jobId}"]`);
+    var isApplied = jobCard && jobCard.getAttribute('data-applied') === '1';
+    var endpoint = isApplied ? '/unmark_applied/' : '/mark_applied/';
+    
+    fetch(endpoint + jobId, { method: 'POST' })
         .then(response => response.json())
         .then(data => {
-            console.log(data);  // Log the response
+            console.log(data);
             if (data.success) {
-                var jobCard = document.querySelector(`.job-item[data-job-id="${jobId}"]`);
-                jobCard.classList.add('job-item-applied');
-                jobCard.setAttribute('data-applied', '1');
-                
-                // Add Applied badge if it doesn't exist
-                var jobContent = jobCard.querySelector('.job-content');
-                var title = jobContent.querySelector('h3');
-                if (title && !title.querySelector('.applied-badge')) {
-                    var badge = document.createElement('span');
-                    badge.className = 'applied-badge';
-                    badge.textContent = 'Applied';
-                    title.appendChild(badge);
+                if (isApplied) {
+                    // Unmark applied
+                    if (jobCard) {
+                        jobCard.classList.remove('job-item-applied');
+                        jobCard.setAttribute('data-applied', '0');
+                        
+                        // Remove Applied badge
+                        var jobContent = jobCard.querySelector('.job-content');
+                        if (jobContent) {
+                            var title = jobContent.querySelector('h3');
+                            if (title) {
+                                var badge = title.querySelector('.applied-badge');
+                                if (badge) {
+                                    badge.remove();
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Mark as applied
+                    if (jobCard) {
+                        jobCard.classList.add('job-item-applied');
+                        jobCard.setAttribute('data-applied', '1');
+                        
+                        // Add Applied badge if it doesn't exist
+                        var jobContent = jobCard.querySelector('.job-content');
+                        var title = jobContent.querySelector('h3');
+                        if (title && !title.querySelector('.applied-badge')) {
+                            var badge = document.createElement('span');
+                            badge.className = 'applied-badge';
+                            badge.textContent = 'Applied';
+                            title.appendChild(badge);
+                        }
+                    }
                 }
+                
+                // Update button text
+                var btn = document.getElementById('applied-btn-' + jobId);
+                if (btn) {
+                    btn.textContent = isApplied ? 'Mark Applied' : 'Unmark Applied';
+                }
+                
+                // Refresh job details to update button states
+                showJobDetails(jobId);
             }
+        })
+        .catch(error => {
+            console.error('Error toggling applied status:', error);
         });
+}
+
+function markAsApplied(jobId) {
+    // Legacy function - redirect to toggle
+    toggleApplied(jobId);
 }
 
 function removeAppliedBadge(jobId) {
@@ -1682,17 +1923,46 @@ function markAsCoverLetter(jobId) {
     startCoverLetterGeneration(jobId);
 }
 
-function markAsRejected(jobId) {
-    console.log('Marking job as rejected: ' + jobId)
-    fetch('/mark_rejected/' + jobId, { method: 'POST' })
+function toggleRejected(jobId) {
+    var jobCard = document.querySelector(`.job-item[data-job-id="${jobId}"]`);
+    var isRejected = jobCard && jobCard.classList.contains('job-item-rejected');
+    var endpoint = isRejected ? '/unmark_rejected/' : '/mark_rejected/';
+    
+    fetch(endpoint + jobId, { method: 'POST' })
         .then(response => response.json())
         .then(data => {
-            console.log(data);  // Log the response
+            console.log(data);
             if (data.success) {
-                var jobCard = document.querySelector(`.job-item[data-job-id="${jobId}"]`);
-                jobCard.classList.add('job-item-rejected');
+                if (isRejected) {
+                    // Unmark rejected
+                    if (jobCard) {
+                        jobCard.classList.remove('job-item-rejected');
+                    }
+                } else {
+                    // Mark as rejected
+                    if (jobCard) {
+                        jobCard.classList.add('job-item-rejected');
+                    }
+                }
+                
+                // Update button text
+                var btn = document.getElementById('rejected-btn-' + jobId);
+                if (btn) {
+                    btn.textContent = isRejected ? 'Mark Rejected' : 'Unmark Rejected';
+                }
+                
+                // Refresh job details to update button states
+                showJobDetails(jobId);
             }
+        })
+        .catch(error => {
+            console.error('Error toggling rejected status:', error);
         });
+}
+
+function markAsRejected(jobId) {
+    // Legacy function - redirect to toggle
+    toggleRejected(jobId);
 }
 
 function hideJob(jobId) {
@@ -1775,17 +2045,46 @@ function unhideJob(jobId) {
 }
 
 
-function markAsInterview(jobId) {
-    console.log('Marking job as interview: ' + jobId)
-    fetch('/mark_interview/' + jobId, { method: 'POST' })
+function toggleInterview(jobId) {
+    var jobCard = document.querySelector(`.job-item[data-job-id="${jobId}"]`);
+    var isInterview = jobCard && jobCard.classList.contains('job-item-interview');
+    var endpoint = isInterview ? '/unmark_interview/' : '/mark_interview/';
+    
+    fetch(endpoint + jobId, { method: 'POST' })
         .then(response => response.json())
         .then(data => {
-            console.log(data);  // Log the response
+            console.log(data);
             if (data.success) {
-                var jobCard = document.querySelector(`.job-item[data-job-id="${jobId}"]`);
-                jobCard.classList.add('job-item-interview');
+                if (isInterview) {
+                    // Unmark interview
+                    if (jobCard) {
+                        jobCard.classList.remove('job-item-interview');
+                    }
+                } else {
+                    // Mark as interview
+                    if (jobCard) {
+                        jobCard.classList.add('job-item-interview');
+                    }
+                }
+                
+                // Update button text
+                var btn = document.getElementById('interview-btn-' + jobId);
+                if (btn) {
+                    btn.textContent = isInterview ? 'Mark Interview' : 'Unmark Interview';
+                }
+                
+                // Refresh job details to update button states
+                showJobDetails(jobId);
             }
+        })
+        .catch(error => {
+            console.error('Error toggling interview status:', error);
         });
+}
+
+function markAsInterview(jobId) {
+    // Legacy function - redirect to toggle
+    toggleInterview(jobId);
 }
 
 function toggleSaved(jobId) {
