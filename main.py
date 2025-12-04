@@ -22,7 +22,7 @@ if sys.platform == 'win32':
 
 def load_config(file_name):
     # Load the config file
-    with open(file_name) as f:
+    with open(file_name, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 # LinkedIn-specific functions moved to scrapers/linkedin_scraper.py

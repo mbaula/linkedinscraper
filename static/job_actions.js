@@ -1,5 +1,93 @@
 var selectedJob = null;
 
+// Standard country list with ISO codes
+const COUNTRIES = [
+    {code: 'AF', name: 'Afghanistan'}, {code: 'AX', name: 'Åland Islands'}, {code: 'AL', name: 'Albania'},
+    {code: 'DZ', name: 'Algeria'}, {code: 'AS', name: 'American Samoa'}, {code: 'AD', name: 'Andorra'},
+    {code: 'AO', name: 'Angola'}, {code: 'AI', name: 'Anguilla'}, {code: 'AQ', name: 'Antarctica'},
+    {code: 'AG', name: 'Antigua and Barbuda'}, {code: 'AR', name: 'Argentina'}, {code: 'AM', name: 'Armenia'},
+    {code: 'AW', name: 'Aruba'}, {code: 'AU', name: 'Australia'}, {code: 'AT', name: 'Austria'},
+    {code: 'AZ', name: 'Azerbaijan'}, {code: 'BS', name: 'Bahamas'}, {code: 'BH', name: 'Bahrain'},
+    {code: 'BD', name: 'Bangladesh'}, {code: 'BB', name: 'Barbados'}, {code: 'BY', name: 'Belarus'},
+    {code: 'BE', name: 'Belgium'}, {code: 'BZ', name: 'Belize'}, {code: 'BJ', name: 'Benin'},
+    {code: 'BM', name: 'Bermuda'}, {code: 'BT', name: 'Bhutan'}, {code: 'BO', name: 'Bolivia (Plurinational State of)'},
+    {code: 'BA', name: 'Bosnia and Herzegovina'}, {code: 'BW', name: 'Botswana'}, {code: 'BV', name: 'Bouvet Island'},
+    {code: 'BR', name: 'Brazil'}, {code: 'IO', name: 'British Indian Ocean Territory'}, {code: 'BN', name: 'Brunei Darussalam'},
+    {code: 'BG', name: 'Bulgaria'}, {code: 'BF', name: 'Burkina Faso'}, {code: 'BI', name: 'Burundi'},
+    {code: 'CV', name: 'Cabo Verde'}, {code: 'KH', name: 'Cambodia'}, {code: 'CM', name: 'Cameroon'},
+    {code: 'CA', name: 'Canada'}, {code: 'BQ', name: 'Caribbean Netherlands'}, {code: 'KY', name: 'Cayman Islands'},
+    {code: 'CF', name: 'Central African Republic'}, {code: 'TD', name: 'Chad'}, {code: 'CL', name: 'Chile'},
+    {code: 'CN', name: 'China'}, {code: 'CX', name: 'Christmas Island'}, {code: 'CC', name: 'Cocos (Keeling) Islands'},
+    {code: 'CO', name: 'Colombia'}, {code: 'KM', name: 'Comoros'}, {code: 'CG', name: 'Congo'},
+    {code: 'CD', name: 'Congo, Democratic Republic of the'}, {code: 'CK', name: 'Cook Islands'}, {code: 'CR', name: 'Costa Rica'},
+    {code: 'HR', name: 'Croatia'}, {code: 'CU', name: 'Cuba'}, {code: 'CW', name: 'Curaçao'},
+    {code: 'CY', name: 'Cyprus'}, {code: 'CZ', name: 'Czech Republic'}, {code: 'CI', name: "Côte d'Ivoire"},
+    {code: 'DK', name: 'Denmark'}, {code: 'DJ', name: 'Djibouti'}, {code: 'DM', name: 'Dominica'},
+    {code: 'DO', name: 'Dominican Republic'}, {code: 'EC', name: 'Ecuador'}, {code: 'EG', name: 'Egypt'},
+    {code: 'SV', name: 'El Salvador'}, {code: 'GQ', name: 'Equatorial Guinea'}, {code: 'ER', name: 'Eritrea'},
+    {code: 'EE', name: 'Estonia'}, {code: 'SZ', name: 'Eswatini (Swaziland)'}, {code: 'ET', name: 'Ethiopia'},
+    {code: 'FK', name: 'Falkland Islands (Malvinas)'}, {code: 'FO', name: 'Faroe Islands'}, {code: 'FJ', name: 'Fiji'},
+    {code: 'FI', name: 'Finland'}, {code: 'FR', name: 'France'}, {code: 'GF', name: 'French Guiana'},
+    {code: 'PF', name: 'French Polynesia'}, {code: 'TF', name: 'French Southern Territories'}, {code: 'GA', name: 'Gabon'},
+    {code: 'GM', name: 'Gambia'}, {code: 'GE', name: 'Georgia'}, {code: 'DE', name: 'Germany'},
+    {code: 'GH', name: 'Ghana'}, {code: 'GI', name: 'Gibraltar'}, {code: 'GR', name: 'Greece'},
+    {code: 'GL', name: 'Greenland'}, {code: 'GD', name: 'Grenada'}, {code: 'GP', name: 'Guadeloupe'},
+    {code: 'GU', name: 'Guam'}, {code: 'GT', name: 'Guatemala'}, {code: 'GG', name: 'Guernsey'},
+    {code: 'GN', name: 'Guinea'}, {code: 'GW', name: 'Guinea-Bissau'}, {code: 'GY', name: 'Guyana'},
+    {code: 'HT', name: 'Haiti'}, {code: 'HM', name: 'Heard Island and Mcdonald Islands'}, {code: 'HN', name: 'Honduras'},
+    {code: 'HK', name: 'Hong Kong'}, {code: 'HU', name: 'Hungary'}, {code: 'IS', name: 'Iceland'},
+    {code: 'IN', name: 'India'}, {code: 'ID', name: 'Indonesia'}, {code: 'IR', name: 'Iran'},
+    {code: 'IQ', name: 'Iraq'}, {code: 'IE', name: 'Ireland'}, {code: 'IM', name: 'Isle of Man'},
+    {code: 'IL', name: 'Israel'}, {code: 'IT', name: 'Italy'}, {code: 'JM', name: 'Jamaica'},
+    {code: 'JP', name: 'Japan'}, {code: 'JE', name: 'Jersey'}, {code: 'JO', name: 'Jordan'},
+    {code: 'KZ', name: 'Kazakhstan'}, {code: 'KE', name: 'Kenya'}, {code: 'KI', name: 'Kiribati'},
+    {code: 'KP', name: 'Korea, North'}, {code: 'KR', name: 'Korea, South'}, {code: 'XK', name: 'Kosovo'},
+    {code: 'KW', name: 'Kuwait'}, {code: 'KG', name: 'Kyrgyzstan'}, {code: 'LA', name: 'Lao People\'s Democratic Republic'},
+    {code: 'LV', name: 'Latvia'}, {code: 'LB', name: 'Lebanon'}, {code: 'LS', name: 'Lesotho'},
+    {code: 'LR', name: 'Liberia'}, {code: 'LY', name: 'Libya'}, {code: 'LI', name: 'Liechtenstein'},
+    {code: 'LT', name: 'Lithuania'}, {code: 'LU', name: 'Luxembourg'}, {code: 'MO', name: 'Macao'},
+    {code: 'MK', name: 'Macedonia North'}, {code: 'MG', name: 'Madagascar'}, {code: 'MW', name: 'Malawi'},
+    {code: 'MY', name: 'Malaysia'}, {code: 'MV', name: 'Maldives'}, {code: 'ML', name: 'Mali'},
+    {code: 'MT', name: 'Malta'}, {code: 'MH', name: 'Marshall Islands'}, {code: 'MQ', name: 'Martinique'},
+    {code: 'MR', name: 'Mauritania'}, {code: 'MU', name: 'Mauritius'}, {code: 'YT', name: 'Mayotte'},
+    {code: 'MX', name: 'Mexico'}, {code: 'FM', name: 'Micronesia'}, {code: 'MD', name: 'Moldova'},
+    {code: 'MC', name: 'Monaco'}, {code: 'MN', name: 'Mongolia'}, {code: 'ME', name: 'Montenegro'},
+    {code: 'MS', name: 'Montserrat'}, {code: 'MA', name: 'Morocco'}, {code: 'MZ', name: 'Mozambique'},
+    {code: 'MM', name: 'Myanmar (Burma)'}, {code: 'NA', name: 'Namibia'}, {code: 'NR', name: 'Nauru'},
+    {code: 'NP', name: 'Nepal'}, {code: 'NL', name: 'Netherlands'}, {code: 'AN', name: 'Netherlands Antilles'},
+    {code: 'NC', name: 'New Caledonia'}, {code: 'NZ', name: 'New Zealand'}, {code: 'NI', name: 'Nicaragua'},
+    {code: 'NE', name: 'Niger'}, {code: 'NG', name: 'Nigeria'}, {code: 'NU', name: 'Niue'},
+    {code: 'NF', name: 'Norfolk Island'}, {code: 'MP', name: 'Northern Mariana Islands'}, {code: 'NO', name: 'Norway'},
+    {code: 'OM', name: 'Oman'}, {code: 'PK', name: 'Pakistan'}, {code: 'PW', name: 'Palau'},
+    {code: 'PS', name: 'Palestine'}, {code: 'PA', name: 'Panama'}, {code: 'PG', name: 'Papua New Guinea'},
+    {code: 'PY', name: 'Paraguay'}, {code: 'PE', name: 'Peru'}, {code: 'PH', name: 'Philippines'},
+    {code: 'PN', name: 'Pitcairn Islands'}, {code: 'PL', name: 'Poland'}, {code: 'PT', name: 'Portugal'},
+    {code: 'PR', name: 'Puerto Rico'}, {code: 'QA', name: 'Qatar'}, {code: 'RE', name: 'Reunion'},
+    {code: 'RO', name: 'Romania'}, {code: 'RU', name: 'Russian Federation'}, {code: 'RW', name: 'Rwanda'},
+    {code: 'BL', name: 'Saint Barthelemy'}, {code: 'SH', name: 'Saint Helena'}, {code: 'KN', name: 'Saint Kitts and Nevis'},
+    {code: 'LC', name: 'Saint Lucia'}, {code: 'MF', name: 'Saint Martin'}, {code: 'PM', name: 'Saint Pierre and Miquelon'},
+    {code: 'VC', name: 'Saint Vincent and the Grenadines'}, {code: 'WS', name: 'Samoa'}, {code: 'SM', name: 'San Marino'},
+    {code: 'ST', name: 'Sao Tome and Principe'}, {code: 'SA', name: 'Saudi Arabia'}, {code: 'SN', name: 'Senegal'},
+    {code: 'RS', name: 'Serbia'}, {code: 'CS', name: 'Serbia and Montenegro'}, {code: 'SC', name: 'Seychelles'},
+    {code: 'SL', name: 'Sierra Leone'}, {code: 'SG', name: 'Singapore'}, {code: 'SX', name: 'Sint Maarten'},
+    {code: 'SK', name: 'Slovakia'}, {code: 'SI', name: 'Slovenia'}, {code: 'SB', name: 'Solomon Islands'},
+    {code: 'SO', name: 'Somalia'}, {code: 'ZA', name: 'South Africa'}, {code: 'GS', name: 'South Georgia and the South Sandwich Islands'},
+    {code: 'SS', name: 'South Sudan'}, {code: 'ES', name: 'Spain'}, {code: 'LK', name: 'Sri Lanka'},
+    {code: 'SD', name: 'Sudan'}, {code: 'SR', name: 'Suriname'}, {code: 'SJ', name: 'Svalbard and Jan Mayen'},
+    {code: 'SE', name: 'Sweden'}, {code: 'CH', name: 'Switzerland'}, {code: 'SY', name: 'Syria'},
+    {code: 'TW', name: 'Taiwan'}, {code: 'TJ', name: 'Tajikistan'}, {code: 'TZ', name: 'Tanzania'},
+    {code: 'TH', name: 'Thailand'}, {code: 'TL', name: 'Timor-Leste'}, {code: 'TG', name: 'Togo'},
+    {code: 'TK', name: 'Tokelau'}, {code: 'TO', name: 'Tonga'}, {code: 'TT', name: 'Trinidad and Tobago'},
+    {code: 'TN', name: 'Tunisia'}, {code: 'TR', name: 'Turkey (Türkiye)'}, {code: 'TM', name: 'Turkmenistan'},
+    {code: 'TC', name: 'Turks and Caicos Islands'}, {code: 'TV', name: 'Tuvalu'}, {code: 'UM', name: 'U.S. Outlying Islands'},
+    {code: 'UG', name: 'Uganda'}, {code: 'UA', name: 'Ukraine'}, {code: 'AE', name: 'United Arab Emirates'},
+    {code: 'GB', name: 'United Kingdom'}, {code: 'US', name: 'United States'}, {code: 'UY', name: 'Uruguay'},
+    {code: 'UZ', name: 'Uzbekistan'}, {code: 'VU', name: 'Vanuatu'}, {code: 'VA', name: 'Vatican City Holy See'},
+    {code: 'VE', name: 'Venezuela'}, {code: 'VN', name: 'Vietnam'}, {code: 'VG', name: 'Virgin Islands, British'},
+    {code: 'VI', name: 'Virgin Islands, U.S'}, {code: 'WF', name: 'Wallis and Futuna'}, {code: 'EH', name: 'Western Sahara'},
+    {code: 'YE', name: 'Yemen'}, {code: 'ZM', name: 'Zambia'}, {code: 'ZW', name: 'Zimbabwe'}
+];
+
 // Multi-select filter state
 let selectedFilters = {
     city: [],
@@ -8,6 +96,34 @@ let selectedFilters = {
     country: [],
     status: []
 };
+
+// Save filters to localStorage
+function saveFiltersToStorage() {
+    try {
+        const filterState = {
+            selectedFilters: selectedFilters,
+            searchBar: document.getElementById('search-bar') ? document.getElementById('search-bar').value : '',
+            sortBy: document.getElementById('sort-by') ? document.getElementById('sort-by').value : '',
+            dateFilter: document.getElementById('filter-date') ? document.getElementById('filter-date').value : ''
+        };
+        localStorage.setItem('jobListFilters', JSON.stringify(filterState));
+    } catch (e) {
+        console.error('Error saving filters to localStorage:', e);
+    }
+}
+
+// Load filters from localStorage
+function loadFiltersFromStorage() {
+    try {
+        const saved = localStorage.getItem('jobListFilters');
+        if (saved) {
+            return JSON.parse(saved);
+        }
+    } catch (e) {
+        console.error('Error loading filters from localStorage:', e);
+    }
+    return null;
+}
 
 // Search and filter functionality
 document.addEventListener('DOMContentLoaded', function() {
@@ -19,7 +135,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const urlParams = new URLSearchParams(window.location.search);
     const includeHidden = urlParams.get('include_hidden') === 'true';
     
-    // Restore filter states from URL if they exist
+    // Load saved filters from localStorage (if no URL params)
+    const savedFilters = loadFiltersFromStorage();
+    const hasUrlParams = urlParams.has('status_filters') || urlParams.has('city_filters') || 
+                         urlParams.has('title_filters') || urlParams.has('company_filters') || 
+                         urlParams.has('country_filters');
+    
+    // Restore filter states from URL if they exist, otherwise use localStorage
     const statusFilters = urlParams.get('status_filters');
     if (statusFilters) {
         selectedFilters.status = statusFilters.split(',').filter(f => f);
@@ -39,9 +161,13 @@ document.addEventListener('DOMContentLoaded', function() {
             hiddenCheckbox.checked = true;
         }
         updateFilterDisplay('status');
+    } else if (savedFilters && savedFilters.selectedFilters && savedFilters.selectedFilters.status && savedFilters.selectedFilters.status.length > 0) {
+        // Restore from localStorage
+        selectedFilters.status = savedFilters.selectedFilters.status || [];
+        // Note: Checkboxes will be updated after DOM is ready
     }
     
-    // Restore other filters from URL (after populateFilters runs)
+    // Restore other filters from URL (after populateFilters runs), or from localStorage
     const cityFilters = urlParams.get('city_filters');
     const titleFilters = urlParams.get('title_filters');
     const companyFilters = urlParams.get('company_filters');
@@ -49,11 +175,24 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Store for later restoration after populateFilters
     const filtersToRestore = {
-        city: cityFilters ? cityFilters.split(',').filter(f => f) : [],
-        title: titleFilters ? titleFilters.split(',').filter(f => f) : [],
-        company: companyFilters ? companyFilters.split(',').filter(f => f) : [],
-        country: countryFilters ? countryFilters.split(',').filter(f => f) : []
+        city: cityFilters ? cityFilters.split(',').filter(f => f) : (savedFilters && savedFilters.selectedFilters && savedFilters.selectedFilters.city ? savedFilters.selectedFilters.city : []),
+        title: titleFilters ? titleFilters.split(',').filter(f => f) : (savedFilters && savedFilters.selectedFilters && savedFilters.selectedFilters.title ? savedFilters.selectedFilters.title : []),
+        company: companyFilters ? companyFilters.split(',').filter(f => f) : (savedFilters && savedFilters.selectedFilters && savedFilters.selectedFilters.company ? savedFilters.selectedFilters.company : []),
+        country: countryFilters ? countryFilters.split(',').filter(f => f) : (savedFilters && savedFilters.selectedFilters && savedFilters.selectedFilters.country ? savedFilters.selectedFilters.country : [])
     };
+    
+    // Restore search bar, sort, and date filter from localStorage if no URL params
+    if (!hasUrlParams && savedFilters) {
+        if (searchBar && savedFilters.searchBar) {
+            searchBar.value = savedFilters.searchBar;
+        }
+        if (sortBy && savedFilters.sortBy) {
+            sortBy.value = savedFilters.sortBy;
+        }
+        if (filterDate && savedFilters.dateFilter) {
+            filterDate.value = savedFilters.dateFilter;
+        }
+    }
     
     // Check if search was completed and refresh if needed
     checkForSearchCompletion();
@@ -63,6 +202,18 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Restore filters after they're populated
     setTimeout(function() {
+        // Restore status filter checkboxes (they exist in DOM, just need to be checked)
+        if (savedFilters && savedFilters.selectedFilters && savedFilters.selectedFilters.status && savedFilters.selectedFilters.status.length > 0) {
+            selectedFilters.status.forEach(function(status) {
+                const checkbox = document.getElementById(`filter-status-${status}`);
+                if (checkbox) {
+                    checkbox.checked = true;
+                }
+            });
+            updateFilterDisplay('status');
+        }
+        
+        // Restore other filters (city, title, company, country)
         Object.keys(filtersToRestore).forEach(function(type) {
             if (filtersToRestore[type].length > 0) {
                 selectedFilters[type] = filtersToRestore[type];
@@ -84,22 +235,30 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
         
-    }, 300);
-    
-    // Apply filters after everything is loaded (especially important if hidden filter is active)
-    setTimeout(function() {
+        // Apply filters after all filters are restored (especially important if hidden filter is active)
         applyAllFilters();
-    }, 200);
+        // Save filters to localStorage after they're applied (so URL params get saved too)
+        saveFiltersToStorage();
+    }, 300);
     
     // Add event listeners
     if (searchBar) {
-        searchBar.addEventListener('input', applyAllFilters);
+        searchBar.addEventListener('input', function() {
+            applyAllFilters();
+            saveFiltersToStorage();
+        });
     }
     if (sortBy) {
-        sortBy.addEventListener('change', applyAllFilters);
+        sortBy.addEventListener('change', function() {
+            applyAllFilters();
+            saveFiltersToStorage();
+        });
     }
     if (filterDate) {
-        filterDate.addEventListener('change', applyAllFilters);
+        filterDate.addEventListener('change', function() {
+            applyAllFilters();
+            saveFiltersToStorage();
+        });
     }
     
     // Close dropdowns when clicking outside
@@ -140,32 +299,37 @@ function checkForSearchCompletion() {
     }
 }
 
+// Function to match location to country name from standard list
 function extractCountry(location) {
-    // Extract country from location string
+    // Extract country from location string by matching against standard country list
     if (!location) return '';
     
     const locationLower = location.toLowerCase();
     
-    // Handle special cases for metropolitan areas and regions
-    if (locationLower.includes('greater montreal') || locationLower.includes('montreal')) {
-        return 'Canada';
-    }
-    if (locationLower.includes('greater vancouver') || locationLower.includes('vancouver')) {
-        return 'Canada';
-    }
-    if (locationLower.includes('greater toronto') || locationLower.includes('gta')) {
+    // Handle special cases for metropolitan areas and regions first
+    if (locationLower.includes('greater montreal') || locationLower.includes('montreal') || 
+        locationLower.includes('greater vancouver') || locationLower.includes('vancouver') ||
+        locationLower.includes('greater toronto') || locationLower.includes('gta') ||
+        locationLower.includes('ottawa') || locationLower.includes('calgary') ||
+        locationLower.includes('edmonton') || locationLower.includes('winnipeg')) {
         return 'Canada';
     }
     
     const parts = location.split(',').map(p => p.trim());
-    if (parts.length === 0) return '';
     
-    // US state abbreviations (2 letters)
+    // US state abbreviations (2 letters) - if found, it's US
     const usStates = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 
                       'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 
                       'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 
                       'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 
                       'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'];
+    
+    // Check if any part matches a US state
+    for (const part of parts) {
+        if (usStates.includes(part.toUpperCase())) {
+            return 'United States';
+        }
+    }
     
     // Canadian provinces (2 letters and full names)
     const canadianProvinces = ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT'];
@@ -173,50 +337,47 @@ function extractCountry(location) {
                                    'saskatchewan', 'nova scotia', 'new brunswick', 'newfoundland', 
                                    'prince edward island', 'northwest territories', 'yukon', 'nunavut'];
     
-    // Check each part for state/province abbreviations or names
-    for (let i = parts.length - 1; i >= 0; i--) {
-        const part = parts[i].toUpperCase();
-        const partLower = parts[i].toLowerCase();
-        
-        if (usStates.includes(part)) {
-            return 'United States';
-        } else if (canadianProvinces.includes(part) || canadianProvinceNames.some(name => partLower.includes(name))) {
+    // Check for Canadian provinces
+    for (const part of parts) {
+        const partUpper = part.toUpperCase();
+        const partLower = part.toLowerCase();
+        if (canadianProvinces.includes(partUpper) || canadianProvinceNames.some(name => partLower.includes(name))) {
             return 'Canada';
         }
     }
     
-    // If no state/province found, check the last part
-    const lastPart = parts[parts.length - 1];
-    const lastPartLower = lastPart.toLowerCase();
-    
-    // Common country names that might appear
-    if (lastPartLower.includes('united states') || lastPartLower.includes('usa') || lastPartLower === 'us') {
-        return 'United States';
-    } else if (lastPartLower.includes('canada')) {
-        return 'Canada';
-    } else if (lastPartLower.includes('united kingdom') || lastPartLower === 'uk') {
-        return 'United Kingdom';
-    } else if (lastPartLower.includes('australia')) {
-        return 'Australia';
-    } else if (lastPartLower.includes('germany')) {
-        return 'Germany';
-    } else if (lastPartLower.includes('france')) {
-        return 'France';
-    } else if (lastPartLower.includes('india')) {
-        return 'India';
-    } else if (lastPartLower.includes('china')) {
-        return 'China';
-    } else if (lastPartLower.includes('japan')) {
-        return 'Japan';
+    // Try to match against country names from standard list (case-insensitive)
+    // Check each part of the location against country names
+    for (const part of parts) {
+        const partLower = part.toLowerCase();
+        
+        // Try exact match first
+        for (const country of COUNTRIES) {
+            const countryNameLower = country.name.toLowerCase();
+            if (partLower === countryNameLower || partLower === country.code.toLowerCase()) {
+                return country.name;
+            }
+        }
+        
+        // Try partial match (location contains country name or vice versa)
+        for (const country of COUNTRIES) {
+            const countryNameLower = country.name.toLowerCase();
+            if (partLower.includes(countryNameLower) || countryNameLower.includes(partLower)) {
+                return country.name;
+            }
+        }
+        
+        // Check common variations
+        if (partLower.includes('united states') || partLower.includes('usa') || partLower === 'us' || partLower === 'u.s.') {
+            return 'United States';
+        }
+        if (partLower.includes('united kingdom') || partLower === 'uk' || partLower === 'u.k.' || partLower === 'great britain') {
+            return 'United Kingdom';
+        }
     }
     
-    // If 2+ parts and last part doesn't match known patterns, assume it's the country
-    if (parts.length >= 2) {
-        return lastPart;
-    }
-    
-    // Single part - return as-is (might be city or country)
-    return parts[0];
+    // If no match found, return empty string (let the filter handle it)
+    return '';
 }
 
 function populateFilters() {
@@ -250,25 +411,59 @@ function populateFilters() {
     // Populate company filter
     populateMultiSelect('company', Array.from(companies).sort());
     
-    // Populate country filter
-    populateMultiSelect('country', Array.from(countries).sort());
+    // Populate country filter with standard country list
+    const countryNames = COUNTRIES.map(c => c.name).sort();
+    populateMultiSelect('country', countryNames);
 }
 
 function populateMultiSelect(type, options) {
     const optionsContainer = document.getElementById(`${type}-options`);
     optionsContainer.innerHTML = '';
     
+    // Separate selected and unselected options
+    const selectedOptions = [];
+    const unselectedOptions = [];
+    
     options.forEach(function(option) {
+        const isSelected = selectedFilters[type].includes(option);
+        if (isSelected) {
+            selectedOptions.push(option);
+        } else {
+            unselectedOptions.push(option);
+        }
+    });
+    
+    // Sort each group
+    selectedOptions.sort();
+    unselectedOptions.sort();
+    
+    // Function to create option element
+    function createOptionElement(option) {
         const div = document.createElement('div');
         div.className = 'multi-select-option';
         const safeId = `${type}-${option.replace(/[^a-zA-Z0-9]/g, '_')}_${Math.random().toString(36).substr(2, 9)}`;
         const escapedValue = option.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        const isSelected = selectedFilters[type].includes(option);
+        
+        if (isSelected) {
+            div.classList.add('selected');
+        }
         
         div.innerHTML = `
-            <input type="checkbox" id="${safeId}" value="${escapedValue}" onchange="toggleFilter('${type}', this.value, event)">
+            <input type="checkbox" id="${safeId}" value="${escapedValue}" onchange="toggleFilter('${type}', this.value, event)"${isSelected ? ' checked' : ''}>
             <label for="${safeId}" style="cursor: pointer; flex: 1;" onclick="event.preventDefault(); document.getElementById('${safeId}').click();">${option}</label>
         `;
-        optionsContainer.appendChild(div);
+        return div;
+    }
+    
+    // Append selected options first
+    selectedOptions.forEach(function(option) {
+        optionsContainer.appendChild(createOptionElement(option));
+    });
+    
+    // Append unselected options after
+    unselectedOptions.forEach(function(option) {
+        optionsContainer.appendChild(createOptionElement(option));
     });
 }
 
@@ -338,6 +533,40 @@ function filterOptions(type, searchTerm) {
         } else {
             option.style.display = 'none';
         }
+    });
+}
+
+function reorderDropdownOptions(type) {
+    // Reorder options to show selected items at the top
+    const optionsContainer = document.getElementById(`${type}-options`);
+    if (!optionsContainer) return;
+    
+    const allOptions = Array.from(optionsContainer.querySelectorAll('.multi-select-option'));
+    const selectedOptions = [];
+    const unselectedOptions = [];
+    
+    allOptions.forEach(function(option) {
+        const checkbox = option.querySelector('input[type="checkbox"]');
+        if (checkbox && checkbox.checked) {
+            selectedOptions.push(option);
+            option.classList.add('selected');
+        } else {
+            unselectedOptions.push(option);
+            option.classList.remove('selected');
+        }
+    });
+    
+    // Clear container
+    optionsContainer.innerHTML = '';
+    
+    // Append selected options first
+    selectedOptions.forEach(function(option) {
+        optionsContainer.appendChild(option);
+    });
+    
+    // Append unselected options after
+    unselectedOptions.forEach(function(option) {
+        optionsContainer.appendChild(option);
     });
 }
 
@@ -436,8 +665,17 @@ function toggleFilter(type, value, event) {
         }
     }
     
+    // Update filter display and apply filters immediately
     updateFilterDisplay(type);
+    
+    // Reorder dropdown options to show selected items at top (for non-status filters)
+    if (type !== 'status') {
+        reorderDropdownOptions(type);
+    }
+    
+    // Apply filters immediately without delay
     applyAllFilters();
+    saveFiltersToStorage(); // Auto-save filters when they change
 }
 
 function updateFilterDisplay(type) {
@@ -521,8 +759,8 @@ function isDateInRange(jobDate, range) {
 }
 
 function applyAllFilters() {
-    const searchTerm = document.getElementById('search-bar').value.toLowerCase();
-    const sortBy = document.getElementById('sort-by').value;
+    const searchTerm = document.getElementById('search-bar') ? document.getElementById('search-bar').value.toLowerCase() : '';
+    const sortBy = document.getElementById('sort-by') ? document.getElementById('sort-by').value : '';
     const dateFilter = document.getElementById('filter-date') ? document.getElementById('filter-date').value : '';
     
     const jobItems = document.querySelectorAll('.job-item');
@@ -643,8 +881,8 @@ function applyAllFilters() {
         }
     });
     
-    // Sort the visible jobs
-    if (sortBy && visibleJobs.length > 0) {
+    // Sort the visible jobs (selected jobs will be at the top)
+    if (visibleJobs.length > 0) {
         sortJobs(visibleJobs, sortBy);
     }
 }

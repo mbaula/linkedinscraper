@@ -43,6 +43,8 @@ def execute_search():
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding='utf-8',
+                errors='replace',  # Replace invalid characters instead of failing
                 bufsize=0,  # Unbuffered
                 universal_newlines=True,
                 cwd=os.getcwd(),

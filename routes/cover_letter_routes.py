@@ -333,10 +333,10 @@ def get_CoverLetter(job_id):
     if selected_model and provider == "ollama":
         try:
             from utils.config_utils import load_config
-            with open('config.json', 'r') as f:
+            with open('config.json', 'r', encoding='utf-8') as f:
                 current_config = json.load(f)
             current_config['ollama_model'] = selected_model
-            with open('config.json', 'w') as f:
+            with open('config.json', 'w', encoding='utf-8') as f:
                 json.dump(current_config, f, indent=4)
             # Reload config in app context
             current_app.config['CONFIG'] = load_config('config.json')

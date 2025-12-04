@@ -610,6 +610,7 @@ Output ONLY the JSON object with real extracted values, no other text."""
                     if json_str.strip() and not json_str.strip().endswith('}'):
                         json_str = json_str.rstrip() + '\n}'
             else:
+                # No JSON found at all - use entire response
                 json_str = response
     
     try:
@@ -893,6 +894,7 @@ NOTE: Please output only a valid JSON matching the EXACT schema."""
                     if json_str.strip() and not json_str.strip().endswith('}'):
                         json_str = json_str.rstrip() + '\n}'
             else:
+                # No JSON found at all - use entire response
                 json_str = response
     
     try:

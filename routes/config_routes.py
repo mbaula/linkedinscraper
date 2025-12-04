@@ -19,7 +19,7 @@ def search_config():
 def get_config():
     """Get current configuration"""
     try:
-        with open('config.json', 'r') as f:
+        with open('config.json', 'r', encoding='utf-8') as f:
             config = json.load(f)
         return jsonify(config)
     except Exception as e:
@@ -31,8 +31,8 @@ def update_config():
     """Update configuration"""
     try:
         new_config = request.json
-        with open('config.json', 'w') as f:
-            json.dump(new_config, f, indent=4)
+        with open('config.json', 'w', encoding='utf-8') as f:
+            json.dump(new_config, f, indent=4, ensure_ascii=False)
         # Reload config in app context
         from utils.config_utils import load_config
         current_app.config['CONFIG'] = load_config('config.json')
