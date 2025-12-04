@@ -3,28 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <title>Search Configuration</title>
+    <link rel="stylesheet" href="/static/dark_mode.css">
     <style>
         body {
             font-family: Arial, sans-serif;
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
-            background-color: #f5f5f5;
         }
         .container {
-            background-color: white;
+            background-color: var(--bg-primary);
             padding: 30px;
             border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 10px var(--shadow);
         }
         h1 {
-            color: #4CAF50;
+            color: var(--accent-color);
             margin-bottom: 10px;
         }
         .nav-link {
             display: inline-block;
             margin-bottom: 20px;
-            color: #4CAF50;
+            color: var(--accent-color);
             text-decoration: none;
             font-weight: bold;
         }
@@ -34,12 +34,12 @@
         .section {
             margin-bottom: 30px;
             padding: 20px;
-            background-color: #f9f9f9;
+            background-color: var(--bg-secondary);
             border-radius: 5px;
-            border-left: 4px solid #4CAF50;
+            border-left: 4px solid var(--accent-color);
         }
         .section h2 {
-            color: #4CAF50;
+            color: var(--accent-color);
             margin-top: 0;
             font-size: 1.3em;
         }
@@ -50,30 +50,30 @@
             display: block;
             margin-bottom: 5px;
             font-weight: bold;
-            color: #333;
+            color: var(--text-primary);
         }
         input[type="text"], input[type="number"], select, textarea {
             width: 100%;
             padding: 10px;
-            border: 2px solid #ddd;
+            border: 2px solid var(--border-color);
             border-radius: 5px;
             font-size: 14px;
             box-sizing: border-box;
         }
         input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:focus {
             outline: none;
-            border-color: #4CAF50;
+            border-color: var(--accent-color);
         }
         textarea {
             min-height: 80px;
             resize: vertical;
         }
         .array-item {
-            background-color: white;
+            background-color: var(--bg-primary);
             padding: 15px;
             margin-bottom: 10px;
             border-radius: 5px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--border-color);
             position: relative;
         }
         .array-item-header {
@@ -84,7 +84,7 @@
         }
         .array-item-title {
             font-weight: bold;
-            color: #4CAF50;
+            color: var(--accent-color);
         }
         .btn {
             padding: 10px 20px;
@@ -96,11 +96,11 @@
             transition: background-color 0.3s;
         }
         .btn-primary {
-            background-color: #4CAF50;
+            background-color: var(--accent-color);
             color: white;
         }
         .btn-primary:hover {
-            background-color: #45a049;
+            background-color: var(--accent-hover);
         }
         .btn-danger {
             background-color: #f44336;
@@ -117,14 +117,14 @@
             background-color: #0b7dda;
         }
         .btn-success {
-            background-color: #4CAF50;
+            background-color: var(--accent-color);
             color: white;
         }
         .btn-success:hover {
-            background-color: #45a049;
+            background-color: var(--accent-hover);
         }
         .btn:disabled {
-            background-color: #cccccc;
+            background-color: var(--border-color);
             cursor: not-allowed;
         }
         .button-group {
@@ -139,19 +139,19 @@
             display: none;
         }
         .status-message.success {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+            background-color: var(--success-bg);
+            color: var(--success-text);
+            border: 1px solid var(--success-text);
         }
         .status-message.error {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+            background-color: var(--error-bg);
+            color: var(--error-text);
+            border: 1px solid var(--error-text);
         }
         .status-message.info {
-            background-color: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
+            background-color: var(--info-bg);
+            color: var(--info-text);
+            border: 1px solid var(--info-text);
         }
         .tag-input {
             display: flex;
@@ -160,7 +160,7 @@
             margin-top: 5px;
         }
         .tag {
-            background-color: #4CAF50;
+            background-color: var(--accent-color);
             color: white;
             padding: 5px 10px;
             border-radius: 15px;
@@ -186,8 +186,8 @@
             display: inline-block;
             width: 20px;
             height: 20px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #4CAF50;
+            border: 3px solid var(--bg-tertiary);
+            border-top: 3px solid var(--accent-color);
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin-left: 10px;
@@ -207,32 +207,33 @@
             background-color: rgba(0,0,0,0.7);
         }
         .keyboard-help-content {
-            background-color: white;
+            background-color: var(--bg-primary);
             margin: 5% auto;
             padding: 30px;
-            border: 2px solid #4CAF50;
+            border: 2px solid var(--accent-color);
             border-radius: 10px;
             width: 90%;
             max-width: 600px;
             max-height: 80vh;
             overflow-y: auto;
+            color: var(--text-primary);
         }
         .keyboard-help-content h2 {
-            color: #4CAF50;
+            color: var(--accent-color);
             margin-top: 0;
         }
         .keyboard-help-content h3 {
-            color: #4CAF50;
+            color: var(--accent-color);
             margin-top: 20px;
         }
         .keyboard-help-content kbd {
-            background-color: #f5f5f5;
-            border: 1px solid #ddd;
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
             border-radius: 3px;
             padding: 2px 6px;
             font-family: monospace;
             font-size: 0.9em;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            box-shadow: 0 1px 2px var(--shadow);
         }
     </style>
 </head>
@@ -240,7 +241,13 @@
     <div class="container">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <a href="/" class="nav-link">← Back to Jobs List</a>
-            <button onclick="toggleKeyboardHelp()" style="background: none; border: 2px solid #4CAF50; color: #4CAF50; padding: 8px 12px; border-radius: 50%; cursor: pointer; font-size: 18px; font-weight: bold; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;" title="Keyboard Shortcuts (Press ? for help)">?</button>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <button onclick="toggleKeyboardHelp()" style="background: none; border: 2px solid var(--accent-color); color: var(--accent-color); padding: 8px 12px; border-radius: 50%; cursor: pointer; font-size: 18px; font-weight: bold; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; transition: all 0.2s;" title="Keyboard Shortcuts (Press ? for help)">?</button>
+                <button onclick="toggleDarkMode()" class="dark-mode-toggle" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; background-color: var(--bg-secondary); border: 2px solid var(--accent-color); border-radius: 20px; cursor: pointer; font-size: 14px; color: var(--text-primary); transition: all 0.2s;">
+                    <span id="dark-mode-icon">🌙</span>
+                    <span id="dark-mode-text">Dark</span>
+                </button>
+            </div>
         </div>
         <h1>Search Configuration</h1>
         
@@ -304,7 +311,7 @@
                     <select id="default_resume" style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 5px; font-size: 14px; box-sizing: border-box;">
                         <option value="">Loading resumes...</option>
                     </select>
-                    <small style="color: #666; display: block; margin-top: 5px;">
+                    <small style="color: var(--text-tertiary); display: block; margin-top: 5px;">
                         Select a default resume to use for analysis. This will be pre-selected when running analysis.
                     </small>
                 </div>
@@ -322,7 +329,7 @@
                         <option value="groq">Groq (Free API tier)</option>
                         <option value="openai">OpenAI (Paid)</option>
                     </select>
-                    <small style="color: #666; display: block; margin-top: 5px;">
+                    <small style="color: var(--text-tertiary); display: block; margin-top: 5px;">
                         <strong>Template:</strong> Simple template-based generation, no setup required.<br>
                         <strong>Ollama:</strong> Free local LLM. Install from <a href="https://ollama.ai" target="_blank">ollama.ai</a> and run: <code>ollama pull llama3.2</code><br>
                         <strong>Groq:</strong> Free API. Get key from <a href="https://console.groq.com" target="_blank">console.groq.com</a><br>
@@ -335,7 +342,7 @@
                     <input type="text" id="ollama_base_url" placeholder="http://localhost:11434" value="http://localhost:11434">
                     <label style="margin-top: 10px;">Ollama Model</label>
                     <input type="text" id="ollama_model" placeholder="llama3.2" value="llama3.2">
-                    <small style="color: #666; display: block; margin-top: 5px;">
+                    <small style="color: var(--text-tertiary); display: block; margin-top: 5px;">
                         Popular models: llama3.2, mistral, llama3.1-8b. Run <code>ollama list</code> to see installed models.
                     </small>
                 </div>
@@ -343,7 +350,7 @@
                 <div class="form-group" id="groq-settings" style="display: none;">
                     <label>Groq API Key</label>
                     <input type="text" id="groq_api_key" placeholder="Enter your Groq API key">
-                    <small style="color: #666; display: block; margin-top: 5px;">
+                    <small style="color: var(--text-tertiary); display: block; margin-top: 5px;">
                         Get a free API key from <a href="https://console.groq.com" target="_blank">console.groq.com</a> (free tier available)
                     </small>
                 </div>
@@ -383,7 +390,7 @@
                 <div class="form-group">
                     <label>Hide Unapplied Jobs After (days)</label>
                     <input type="number" id="delete_unapplied_jobs_after_days" min="0" value="0">
-                    <small style="color: #666; display: block; margin-top: 5px;">
+                    <small style="color: var(--text-tertiary); display: block; margin-top: 5px;">
                         Jobs that haven't been applied to will be automatically hidden after this many days. 
                         Hidden jobs can be viewed using the "Hidden" filter option on the jobs page. Set to 0 to disable automatic hiding.
                     </small>
@@ -399,7 +406,7 @@
                         <button type="button" class="btn btn-secondary" onclick="clearJobCache()">Clear Job Cache</button>
                         <button type="button" class="btn btn-secondary" onclick="clearResumeCache()">Clear Resume Cache</button>
                     </div>
-                    <small style="color: #666; display: block; margin-top: 5px;">
+                    <small style="color: var(--text-tertiary); display: block; margin-top: 5px;">
                         Clear cached job and resume JSON data. This will force re-extraction on the next analysis.
                     </small>
                 </div>
@@ -413,9 +420,9 @@
             </div>
         </form>
 
-        <div id="search-status" style="margin-top: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 5px; display: none;">
+        <div id="search-status" style="margin-top: 20px; padding: 15px; background-color: var(--bg-secondary); border-radius: 5px; display: none;">
             <h3>Search Status</h3>
-            <div id="status-text" style="white-space: pre-wrap; font-family: monospace; background-color: #fff; padding: 10px; border-radius: 5px; max-height: 400px; overflow-y: auto; border: 1px solid #ddd;"></div>
+            <div id="status-text" style="white-space: pre-wrap; font-family: monospace; background-color: var(--bg-primary); color: var(--text-primary); padding: 10px; border-radius: 5px; max-height: 400px; overflow-y: auto; border: 1px solid var(--border-color);"></div>
         </div>
     </div>
 
@@ -424,7 +431,7 @@
         <div class="keyboard-help-content">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h2 style="margin: 0;">Keyboard Shortcuts</h2>
-                <button onclick="toggleKeyboardHelp()" style="background: none; border: none; font-size: 28px; cursor: pointer; color: #333;">&times;</button>
+                <button onclick="toggleKeyboardHelp()" style="background: none; border: none; font-size: 28px; cursor: pointer; color: var(--text-primary);">&times;</button>
             </div>
             <div style="line-height: 1.8;">
                 <h3>Navigation</h3>
@@ -434,11 +441,12 @@
                 <p><kbd>Esc</kbd> - Close modals/previews</p>
             </div>
             <div style="margin-top: 20px; text-align: center;">
-                <button onclick="toggleKeyboardHelp()" style="background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px;">Close</button>
+                <button onclick="toggleKeyboardHelp()" style="background-color: var(--accent-color); color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px;">Close</button>
             </div>
         </div>
     </div>
 
+    <script src="/static/job_actions.js"></script>
     <script>
         let configData = {};
 

@@ -3,51 +3,12 @@
     <head>
         <meta charset="UTF-8">
         <title>Jobs List</title>
+        <link rel="stylesheet" href="/static/dark_mode.css">
         <style>
-            /* CSS Variables for Light/Dark Mode */
-            :root {
-                --bg-primary: #ffffff;
-                --bg-secondary: #f8f8f8;
-                --bg-tertiary: #e8e8e8;
-                --text-primary: #000000;
-                --text-secondary: #333333;
-                --text-tertiary: #666666;
-                --border-color: #ddd;
-                --shadow: rgba(0,0,0,0.2);
-                --accent-color: #4CAF50;
-                --accent-hover: #45a049;
-                --selected-bg: #c3c3c3;
-                --applied-bg: #c7f3ff;
-                --interview-bg: #c7ffc7;
-                --rejected-bg: #ffc7c7;
-                --saved-bg: #fff9c7;
-                --hidden-bg: #e8e8e8;
-            }
-            
-            [data-theme="dark"] {
-                --bg-primary: #1a1a1a;
-                --bg-secondary: #2d2d2d;
-                --bg-tertiary: #3d3d3d;
-                --text-primary: #ffffff;
-                --text-secondary: #e0e0e0;
-                --text-tertiary: #b0b0b0;
-                --border-color: #444;
-                --shadow: rgba(0,0,0,0.5);
-                --accent-color: #66bb6a;
-                --accent-hover: #81c784;
-                --selected-bg: #4a4a4a;
-                --applied-bg: #1e3a4a;
-                --interview-bg: #1e4a1e;
-                --rejected-bg: #4a1e1e;
-                --saved-bg: #4a3e1e;
-                --hidden-bg: #3d3d3d;
-            }
-            
             body {
                 font-family: Arial, sans-serif;
-                background-color: var(--bg-primary);
-                color: var(--text-primary);
-                transition: background-color 0.3s ease, color 0.3s ease;
+                margin: 0;
+                padding: 20px;
             }
             .row {
                 display: flex;
@@ -207,7 +168,7 @@
             }
             .applied-badge {
                 display: inline-block;
-                background-color: #4CAF50;
+                background-color: var(--accent-color);
                 color: white;
                 padding: 4px 10px;
                 border-radius: 12px;
@@ -341,9 +302,10 @@
             }
             .multi-select-display {
                 padding: 10px;
-                border: 2px solid #4CAF50;
+                border: 2px solid var(--accent-color);
                 border-radius: 5px;
-                background-color: white;
+                background-color: var(--bg-primary);
+                color: var(--text-primary);
                 cursor: pointer;
                 display: flex;
                 justify-content: space-between;
@@ -351,10 +313,10 @@
                 font-size: 14px;
             }
             .multi-select-display:hover {
-                border-color: #45a049;
+                border-color: var(--accent-hover);
             }
             .dropdown-arrow {
-                color: #4CAF50;
+                color: var(--accent-color);
                 font-size: 10px;
             }
             .multi-select-dropdown {
@@ -362,20 +324,20 @@
                 top: 100%;
                 left: 0;
                 right: 0;
-                background: white;
-                border: 2px solid #4CAF50;
+                background: var(--bg-primary);
+                border: 2px solid var(--accent-color);
                 border-radius: 5px;
                 margin-top: 5px;
                 z-index: 1000;
                 max-height: 300px;
                 overflow-y: auto;
-                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+                box-shadow: 0 4px 8px var(--shadow);
             }
             .multi-select-search {
                 width: 100%;
                 padding: 8px;
                 border: none;
-                border-bottom: 1px solid #ddd;
+                border-bottom: 1px solid var(--border-color);
                 border-radius: 5px 5px 0 0;
                 font-size: 14px;
                 box-sizing: border-box;
@@ -395,13 +357,13 @@
                 font-size: 14px;
             }
             .multi-select-option:hover {
-                background-color: #f0f0f0;
+                background-color: var(--bg-tertiary);
             }
             .multi-select-option input[type="checkbox"] {
                 margin-right: 8px;
             }
             .multi-select-option.selected {
-                background-color: #e8f5e9;
+                background-color: var(--bg-tertiary);
             }
             .selected-tags {
                 display: flex;
@@ -410,7 +372,7 @@
                 margin-top: 5px;
             }
             .selected-tag {
-                background-color: #4CAF50;
+                background-color: var(--accent-color);
                 color: white;
                 padding: 3px 8px;
                 border-radius: 12px;
@@ -424,7 +386,7 @@
                 font-weight: bold;
             }
             .job-button {
-                background-color: #4CAF50; /* Green */
+                background-color: var(--accent-color);
                 color: white;
                 padding: 10px 24px;
                 text-align: center;
@@ -435,6 +397,10 @@
                 cursor: pointer;
                 border: none;
                 border-radius: 5px;
+                transition: background-color 0.2s ease;
+            }
+            .job-button:hover {
+                background-color: var(--accent-hover);
             }
             #job-details-wrapper {
                 display: flex;
@@ -450,27 +416,27 @@
             }
 
             #resizer {
-                height: 5px;  /* Height of the resizer */
-                background: #ccc;
+                height: 5px;
+                background: var(--border-color);
                 cursor: row-resize;
             }
 
             #bottom-pane {
                 overflow-y: auto;
                 flex-grow: 1;
-                height: calc(30% - 5px); /* Height of the bottom pane */
-                background-color: #f5f5f5;
+                height: calc(30% - 5px);
+                background-color: var(--bg-quaternary);
                 padding: 15px;
                 border-radius: 8px;
             }
             .cover-letter-container {
-                background: linear-gradient(to bottom, #ffffff 0%, #fafafa 100%);
+                background: var(--bg-primary);
                 padding: 0;
                 border-radius: 12px;
-                box-shadow: 0 4px 20px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08);
+                box-shadow: 0 4px 20px var(--shadow), 0 1px 3px var(--shadow);
                 font-family: 'Georgia', 'Times New Roman', serif;
                 line-height: 1.8;
-                color: #2c3e50;
+                color: var(--text-primary);
                 max-width: 850px;
                 margin: 0 auto;
                 overflow-y: auto;
@@ -478,7 +444,7 @@
                 word-wrap: break-word;
                 overflow-wrap: break-word;
                 position: relative;
-                border: 1px solid #e8e8e8;
+                border: 1px solid var(--border-color);
             }
             .cover-letter-content {
                 white-space: pre-wrap;
@@ -494,12 +460,12 @@
             .ollama-pipeline-section {
                 margin-top: 30px;
                 padding: 20px;
-                background-color: #f8f9fa;
+                background-color: var(--bg-secondary);
                 border-radius: 8px;
-                border: 1px solid #e8e8e8;
+                border: 1px solid var(--border-color);
             }
             .ollama-pipeline-section h3 {
-                color: #4CAF50;
+                color: var(--accent-color);
                 margin-top: 0;
                 margin-bottom: 20px;
                 font-size: 1.3em;
@@ -507,9 +473,9 @@
             .pipeline-step {
                 margin-bottom: 20px;
                 padding: 15px;
-                background-color: white;
+                background-color: var(--bg-primary);
                 border-radius: 6px;
-                border: 1px solid #ddd;
+                border: 1px solid var(--border-color);
             }
             .pipeline-step-header {
                 display: flex;
@@ -519,11 +485,11 @@
             }
             .pipeline-step-title {
                 font-weight: bold;
-                color: #333;
+                color: var(--text-primary);
                 font-size: 1.1em;
             }
             .pipeline-step-button {
-                background-color: #4CAF50;
+                background-color: var(--accent-color);
                 color: white;
                 padding: 8px 16px;
                 border: none;
@@ -532,10 +498,10 @@
                 font-size: 14px;
             }
             .pipeline-step-button:hover {
-                background-color: #45a049;
+                background-color: var(--accent-hover);
             }
             .pipeline-step-button:disabled {
-                background-color: #ccc;
+                background-color: var(--border-color);
                 cursor: not-allowed;
             }
             .pipeline-result {
@@ -627,7 +593,7 @@
                 margin: 0;
             }
             .cover-letter-action-btn {
-                background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+                background: var(--accent-color);
                 color: white;
                 padding: 10px 20px;
                 border: none;
@@ -636,13 +602,13 @@
                 font-size: 14px;
                 font-weight: 600;
                 transition: all 0.3s ease;
-                box-shadow: 0 2px 6px rgba(76, 175, 80, 0.3);
+                box-shadow: 0 2px 6px var(--shadow);
                 letter-spacing: 0.3px;
             }
             .cover-letter-action-btn:hover {
-                background: linear-gradient(135deg, #45a049 0%, #3d8b40 100%);
+                background: var(--accent-hover);
                 transform: translateY(-2px);
-                box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+                box-shadow: 0 4px 12px var(--shadow-strong);
             }
             .cover-letter-action-btn:active {
                 transform: translateY(0);
@@ -660,16 +626,17 @@
                 overflow: auto;
             }
             .cover-letter-modal-content {
-                background-color: #fefefe;
+                background-color: var(--bg-primary);
                 margin: 2% auto;
                 padding: 30px;
-                border: 1px solid #888;
+                border: 1px solid var(--border-color);
                 border-radius: 10px;
                 width: 90%;
                 max-width: 900px;
                 max-height: 90vh;
                 overflow-y: auto;
-                box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                box-shadow: 0 4px 20px var(--shadow-strong);
+                color: var(--text-primary);
             }
             .cover-letter-modal-header {
                 display: flex;
@@ -677,28 +644,29 @@
                 align-items: center;
                 margin-bottom: 20px;
                 padding-bottom: 15px;
-                border-bottom: 2px solid #4CAF50;
+                border-bottom: 2px solid var(--accent-color);
             }
             .cover-letter-modal-close {
-                color: #aaa;
+                color: var(--text-tertiary);
                 font-size: 28px;
                 font-weight: bold;
                 cursor: pointer;
             }
             .cover-letter-modal-close:hover {
-                color: #000;
+                color: var(--text-primary);
             }
             .latex-modal-content {
-                background-color: #fefefe;
+                background-color: var(--bg-primary);
                 margin: 2% auto;
                 padding: 30px;
-                border: 1px solid #888;
+                border: 1px solid var(--border-color);
                 border-radius: 10px;
                 width: 90%;
                 max-width: 900px;
                 max-height: 90vh;
                 overflow-y: auto;
-                box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                box-shadow: 0 4px 20px var(--shadow-strong);
+                color: var(--text-primary);
             }
             .latex-textarea {
                 width: 100%;
@@ -706,30 +674,31 @@
                 font-family: 'Courier New', monospace;
                 font-size: 13px;
                 padding: 15px;
-                border: 2px solid #ddd;
+                border: 2px solid var(--border-color);
                 border-radius: 5px;
                 resize: vertical;
                 box-sizing: border-box;
-                background-color: #f9f9f9;
+                background-color: var(--bg-secondary);
+                color: var(--text-primary);
                 white-space: pre-wrap;
                 word-wrap: break-word;
             }
             .latex-instructions {
-                background-color: #e8f5e9;
+                background-color: var(--bg-secondary);
                 padding: 15px;
                 border-radius: 5px;
                 margin-bottom: 15px;
-                border-left: 4px solid #4CAF50;
+                border-left: 4px solid var(--accent-color);
             }
             .latex-instructions h3 {
                 margin-top: 0;
-                color: #4CAF50;
+                color: var(--accent-color);
             }
             .latex-instructions ol {
                 margin-bottom: 0;
             }
             .copy-button {
-                background-color: #4CAF50;
+                background-color: var(--accent-color);
                 color: white;
                 padding: 10px 20px;
                 border: none;
@@ -741,21 +710,21 @@
                 transition: background-color 0.3s;
             }
             .copy-button:hover {
-                background-color: #45a049;
+                background-color: var(--accent-hover);
             }
             .copy-button:active {
-                background-color: #3d8b40;
+                opacity: 0.8;
             }
             .copy-success {
                 display: none;
-                color: #4CAF50;
+                color: var(--accent-color);
                 font-weight: bold;
                 margin-top: 10px;
             }
             .cover-letter-loading {
                 text-align: center;
                 padding: 40px;
-                color: #4CAF50;
+                color: var(--accent-color);
             }
             .cover-letter-placeholder {
                 text-align: center;
@@ -998,12 +967,12 @@
                 </div>
                 <div id="resizer"></div>
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #e8e8e8;">
-                    <h2 style="margin: 0; color: #4CAF50; font-size: 1.5em;">Cover Letter</h2>
+                    <h2 style="margin: 0; color: var(--accent-color); font-size: 1.5em;">Cover Letter</h2>
                     <div style="display: flex; align-items: center; gap: 10px;">
-                        <select id="ollama-model-select" style="display: none; padding: 8px 12px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px; background-color: white;">
+                        <select id="ollama-model-select" style="display: none; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 5px; font-size: 14px; background-color: var(--bg-primary); color: var(--text-primary);">
                             <option value="">Loading models...</option>
                         </select>
-                        <button class="job-button" id="generate-cover-letter-btn" onclick="generateCoverLetter()" style="display: none; background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);">Generate Cover Letter</button>
+                        <button class="job-button" id="generate-cover-letter-btn" onclick="generateCoverLetter()" style="display: none;">Generate Cover Letter</button>
                     </div>
                 </div>
                 <div id="bottom-pane">
@@ -1028,7 +997,7 @@
                 <div id="cover-letter-modal" class="cover-letter-modal">
                     <div class="cover-letter-modal-content">
                         <div class="cover-letter-modal-header">
-                            <h2 style="margin: 0; color: #4CAF50;">Cover Letter</h2>
+                            <h2 style="margin: 0; color: var(--accent-color);">Cover Letter</h2>
                             <span class="cover-letter-modal-close" onclick="closeCoverLetterFullscreen()">&times;</span>
                         </div>
                         <div class="cover-letter-content" id="cover-letter-modal-content"></div>
@@ -1045,7 +1014,7 @@
                 <div id="latex-modal" class="cover-letter-modal" style="display: none;">
                     <div class="latex-modal-content">
                         <div class="cover-letter-modal-header">
-                            <h2 style="margin: 0; color: #4CAF50;">Copy LaTeX Code</h2>
+                            <h2 style="margin: 0; color: var(--accent-color);">Copy LaTeX Code</h2>
                             <span class="cover-letter-modal-close" onclick="closeLatexModal()">&times;</span>
                         </div>
                         <div class="latex-instructions">
@@ -1071,7 +1040,7 @@
                 <div id="analysis-modal" class="cover-letter-modal" style="display: none;">
                     <div class="cover-letter-modal-content" style="max-width: 1200px; max-height: 90vh; overflow-y: auto;">
                         <div class="cover-letter-modal-header">
-                            <h2 style="margin: 0; color: #4CAF50;">AI Analysis Pipeline</h2>
+                            <h2 style="margin: 0; color: var(--accent-color);">AI Analysis Pipeline</h2>
                             <span class="cover-letter-modal-close" onclick="closeAnalysisModal()">&times;</span>
                         </div>
                         <div id="analysis-modal-content" style="padding: 20px 0;">
@@ -1084,7 +1053,7 @@
                 <div id="analysis-history-modal" class="cover-letter-modal" style="display: none;">
                     <div class="cover-letter-modal-content" style="max-width: 1200px; max-height: 90vh; overflow-y: auto;">
                         <div class="cover-letter-modal-header">
-                            <h2 style="margin: 0; color: #4CAF50;">Analysis History</h2>
+                            <h2 style="margin: 0; color: var(--accent-color);">Analysis History</h2>
                             <span class="cover-letter-modal-close" onclick="closeAnalysisHistoryModal()">&times;</span>
                         </div>
                         <div id="analysis-history-content" style="padding: 20px 0;">

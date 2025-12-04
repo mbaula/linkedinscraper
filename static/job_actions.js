@@ -4,7 +4,7 @@ var currentPreviewJobId = null;
 var focusedJobIndex = -1;
 var visibleJobItems = [];
 
-// Dark Mode Functions
+// Dark Mode Functions (Global - works across all pages)
 function initDarkMode() {
     const savedTheme = localStorage.getItem('theme') || 'light';
     document.documentElement.setAttribute('data-theme', savedTheme);
@@ -31,6 +31,13 @@ function updateDarkModeButton(theme) {
             text.textContent = 'Dark';
         }
     }
+}
+
+// Initialize dark mode on page load (for all pages)
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDarkMode);
+} else {
+    initDarkMode();
 }
 
 // Job Preview Functions

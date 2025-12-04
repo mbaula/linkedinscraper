@@ -3,6 +3,7 @@
     <head>
         <meta charset="UTF-8">
         <title>Job Details</title>
+        <link rel="stylesheet" href="/static/dark_mode.css">
         <style>
             body {
                 font-family: Arial, sans-serif;
@@ -15,36 +16,39 @@
             }
             .job-description-container {
                 padding: 10px;
-                box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
+                box-shadow: 0 4px 8px 0 var(--shadow);
                 transition: 0.3s;
-                border-radius: 5px; /* 5px rounded corners */
+                border-radius: 5px;
                 width: 75%;
+                background-color: var(--bg-primary);
+                color: var(--text-primary);
             }
             .job-description-container h1, h2 {
-                color: #4CAF50; /* Green */
+                color: var(--accent-color);
             }
             .job-description-container p {
                 margin-bottom: 15px;
             }
             .job-description-container a {
                 text-decoration: none;
-                color: #4CAF50;
+                color: var(--accent-color);
             }
             .job-description-container a:hover {
                 text-decoration: underline;
             }
             .job-description-container button {
                 padding: 10px 15px;
-                background-color: #4CAF50;
+                background-color: var(--accent-color);
                 border: none;
                 color: white;
                 text-transform: uppercase;
                 border-radius: 5px;
                 cursor: pointer;
                 margin-top: 10px;
+                transition: background-color 0.2s ease;
             }
             .job-description-container button:hover {
-                background-color: #45a049;
+                background-color: var(--accent-hover);
             }
         </style>
     </head>
