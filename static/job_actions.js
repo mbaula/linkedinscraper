@@ -1592,15 +1592,27 @@ async function openAnalysisModal(jobId) {
         resumeJson: null
     };
     
+    // Get config first to check for default resume and model
+    let config = {};
+    try {
+        const configResponse = await fetch('/api/config');
+        config = await configResponse.json();
+    } catch (error) {
+        console.error('Error loading config:', error);
+    }
+    
     // Load available resumes
     let resumeOptions = '<option value="">Loading resumes...</option>';
     try {
         const resumeResponse = await fetch('/api/list-resumes');
         const resumeData = await resumeResponse.json();
+        const defaultResumePath = config.resume_path || '';
+        
         if (resumeData.resumes && resumeData.resumes.length > 0) {
             resumeOptions = '<option value="">Select a resume...</option>';
             resumeData.resumes.forEach(function(resume) {
-                resumeOptions += AnalysisTemplates.getResumeOption(resume);
+                const isSelected = resume.path === defaultResumePath;
+                resumeOptions += `<option value="${AnalysisTemplates.escapeHtml(resume.path)}"${isSelected ? ' selected' : ''}>${AnalysisTemplates.escapeHtml(resume.name)}</option>`;
             });
         } else {
             resumeOptions = '<option value="">No PDF files found in root folder</option>';
@@ -1617,8 +1629,6 @@ async function openAnalysisModal(jobId) {
         const modelData = await modelResponse.json();
         if (modelData.models && modelData.models.length > 0) {
             // Get default model from config
-            const configResponse = await fetch('/api/config');
-            const config = await configResponse.json();
             const defaultModel = config.ollama_model || modelData.models[0];
             
             modelOptions = '';
@@ -2111,6 +2121,9 @@ async function runFullAnalysis(jobId) {
             }
             if (result.results.step4) {
                 console.log('Step 4 data received:', result.results.step4);
+                console.log('Step 4 overallFit:', result.results.step4?.overallFit);
+                console.log('Step 4 overallFit.details:', result.results.step4?.overallFit?.details);
+                console.log('Step 4 overallFit.commentary:', result.results.step4?.overallFit?.commentary);
                 console.log('Step 4 improvements count:', result.results.step4?.improvements?.length || 0);
                 console.log('Step 4 aspirationalImprovements count:', result.results.step4?.aspirationalImprovements?.length || 0);
                 showPipelineResult(4, result.results.step4);

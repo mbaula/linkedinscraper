@@ -91,29 +91,33 @@ KEYWORD_ANALYSIS_SCHEMA = """{
 
 IMPORTANT: Replace the example values above with actual keywords from the job description and resume. The "matching" array should contain actual technical keywords that appear in BOTH the job description AND the resume. The "missing" array should contain actual important technical keywords from the job description that are NOT found in the resume. DO NOT include the word "string" or placeholder text - only include real keywords."""
 
-# Step 4 Schema - Improvements
+# Combined Step 3+4 Schema - Keywords + Improvements
 IMPROVEMENTS_SCHEMA = """{
+  "keywords": {
+    "matching": ["python", "react", "kubernetes"],
+    "missing": ["docker", "aws", "terraform"]
+  },
   "overallFit": {
-    "details": "string",
-    "commentary": "string"
+    "details": "The candidate demonstrates strong alignment through Python and React experience, but lacks Docker and AWS which are critical for this role.",
+    "commentary": "Focus on incorporating Docker and AWS keywords into existing bullet points. Consider highlighting any cloud or containerization experience."
   },
   "improvements": [
     {
-      "suggestion": "string",
-      "lineNumber": "number or null",
-      "section": "string or null",
-      "example": "string (provide a concrete example tailored to the candidate's actual experience from their resume)"
+      "suggestion": "Add Docker to the CIBC DevOps role description",
+      "lineNumber": null,
+      "section": "workExperience",
+      "example": "Reduced loading times by 90% for the centralized microservice portal using Docker containerization, removing legacy NAS and database logging configurations across 30+ microservices"
     }
   ],
   "aspirationalImprovements": [
     {
-      "suggestion": "string (what could be added if the candidate had this experience)",
-      "example": "string (example of what the bullet point would look like if they had this experience)"
+      "suggestion": "If you had AWS experience, add: 'Deployed microservices to AWS ECS using Docker containers'",
+      "example": "Deployed and managed 30+ microservices on AWS ECS using Docker containers, reducing infrastructure costs by 40% through auto-scaling and load balancing"
     }
   ]
 }
 
-CRITICAL: The "improvements" array and "aspirationalImprovements" array are SEPARATE and MUST be kept separate. Do NOT mix them together."""
+IMPORTANT: Replace ALL example values with actual data from the job and resume. The "example" field in improvements MUST be a complete rewritten bullet point, not just a suggestion."""
 
 
 def get_resume_cache(resume_path, config):
@@ -437,12 +441,27 @@ def call_ollama(prompt, base_url, model, num_predict=None, temperature=None, top
         if response.status_code == 200:
             response_data = response.json()
             result = response_data.get("response", "").strip()
+            
+            # Some models (like gpt-oss) may return thinking in a separate field
+            # If response is empty but thinking exists, use thinking as fallback
             if not result:
-                print(f"WARNING: Ollama API returned 200 but response is empty. Full response: {response_data}")
+                thinking = response_data.get("thinking", "").strip()
+                if thinking:
+                    print(f"WARNING: Response field is empty, but thinking field exists. Using thinking field.")
+                    result = thinking
+                else:
+                    print(f"ERROR: Ollama API returned 200 but response is empty.")
+                    print(f"ERROR: Full response_data keys: {list(response_data.keys())}")
+                    print(f"ERROR: response_data content: {str(response_data)[:500]}")
+                    return None
+            
+            print(f"DEBUG: Ollama API response length: {len(result)} chars, first 200 chars: {result[:200]}")
             return result
         else:
-            print(f"ERROR: Ollama API error: {response.status_code} - {response.text}")
-            print(f"ERROR: Request payload was: {payload}")
+            print(f"ERROR: Ollama API error: {response.status_code} - {response.text[:500]}")
+            print(f"ERROR: Request URL: {url}")
+            print(f"ERROR: Request model: {payload.get('model')}")
+            print(f"ERROR: Request prompt length: {len(payload.get('prompt', ''))} chars")
             return None
     except requests.exceptions.Timeout as e:
         print(f"ERROR: Ollama API timeout after 300s: {e}")
@@ -528,7 +547,7 @@ Output ONLY the JSON object with real extracted values, no other text."""
     print(f"Step 1: Prompt length={len(prompt)} chars, essential_job_text length={len(essential_job_text)} chars")
     try:
         response = call_ollama(prompt, base_url, model, 
-                              num_predict=700,      # Limit to ~700 tokens for faster extraction
+                              num_predict=1500,     # Increased to prevent JSON truncation
                               temperature=0.2,       # Low temperature for consistent extraction
                               top_p=0.9,            # Nucleus sampling for faster inference
                               top_k=40)             # Top-k sampling for faster inference
@@ -555,8 +574,8 @@ Output ONLY the JSON object with real extracted values, no other text."""
         return None
     
     # Try to extract JSON from response (in case there's any markdown formatting)
-    # First try to find JSON wrapped in code blocks
-    code_block_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response, re.DOTALL)
+    # First try to find JSON wrapped in code blocks (use greedy match to capture full JSON)
+    code_block_match = re.search(r'```(?:json)?\s*(\{.*\})\s*```', response, re.DOTALL)
     if code_block_match:
         json_str = code_block_match.group(1)
     else:
@@ -565,7 +584,33 @@ Output ONLY the JSON object with real extracted values, no other text."""
         if json_match:
             json_str = json_match.group(0)
         else:
-            json_str = response
+            # JSON might be incomplete - try to find starting brace and fix it
+            json_match = re.search(r'\{.*', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                # Try to fix incomplete JSON by finding balanced braces
+                # Count braces to find the last valid closing brace
+                brace_count = 0
+                last_valid_pos = -1
+                for i, char in enumerate(json_str):
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            last_valid_pos = i
+                            break
+                
+                if last_valid_pos > 0:
+                    # We found a balanced JSON structure
+                    json_str = json_str[:last_valid_pos + 1]
+                else:
+                    # No balanced structure found - try to close it manually
+                    # This is a fallback - add closing brace if missing
+                    if json_str.strip() and not json_str.strip().endswith('}'):
+                        json_str = json_str.rstrip() + '\n}'
+            else:
+                json_str = response
     
     try:
         parsed_json = json.loads(json_str)
@@ -637,6 +682,123 @@ Output ONLY the JSON object with real extracted values, no other text."""
     return cleaned_json
 
 
+def repair_incomplete_json(json_str):
+    """
+    Attempts to repair incomplete/truncated JSON by closing unclosed structures.
+    Returns the repaired JSON string, or None if repair is not possible.
+    """
+    if not json_str or not json_str.strip():
+        return None
+    
+    # First pass: analyze the structure to find where we are
+    brace_depth = 0
+    bracket_depth = 0
+    in_string = False
+    escape_next = False
+    last_valid_pos = -1
+    
+    for i, char in enumerate(json_str):
+        if escape_next:
+            escape_next = False
+            continue
+        
+        if char == '\\':
+            escape_next = True
+            continue
+        
+        if char == '"' and not escape_next:
+            in_string = not in_string
+            continue
+        
+        if in_string:
+            continue
+        
+        if char == '{':
+            brace_depth += 1
+        elif char == '}':
+            brace_depth -= 1
+            if brace_depth == 0 and bracket_depth == 0:
+                last_valid_pos = i
+        elif char == '[':
+            bracket_depth += 1
+        elif char == ']':
+            bracket_depth -= 1
+            if brace_depth == 0 and bracket_depth == 0:
+                last_valid_pos = i
+    
+    # If we found a complete structure, use it
+    if last_valid_pos > 0:
+        return json_str[:last_valid_pos + 1]
+    
+    # Second pass: repair the incomplete JSON
+    repaired = json_str.rstrip()
+    
+    # If we're in the middle of a string, find where that incomplete element started
+    # and remove it entirely
+    if in_string:
+        # Work backwards to find the opening quote of this incomplete string
+        temp_escape = False
+        string_start = -1
+        for i in range(len(repaired) - 1, -1, -1):
+            char = repaired[i]
+            if temp_escape:
+                temp_escape = False
+                continue
+            if char == '\\':
+                temp_escape = True
+                continue
+            if char == '"' and not temp_escape:
+                string_start = i
+                break
+        
+        if string_start > 0:
+            # Check if there's a comma before this incomplete string element
+            # Look backwards for comma, bracket, or brace (not in string)
+            truncate_pos = string_start
+            temp_in_string = False
+            temp_escape2 = False
+            for i in range(string_start - 1, -1, -1):
+                char = repaired[i]
+                if temp_escape2:
+                    temp_escape2 = False
+                    continue
+                if char == '\\':
+                    temp_escape2 = True
+                    continue
+                if char == '"' and not temp_escape2:
+                    temp_in_string = not temp_in_string
+                    continue
+                if not temp_in_string:
+                    if char == ',':
+                        truncate_pos = i
+                        break
+                    elif char in '[{':
+                        # We've reached the start of the array/object, truncate here
+                        truncate_pos = i + 1  # Keep the opening bracket/brace
+                        break
+            
+            # Truncate to remove the incomplete string element
+            repaired = repaired[:truncate_pos].rstrip()
+            # Remove trailing comma if present
+            if repaired.endswith(','):
+                repaired = repaired[:-1].rstrip()
+    
+    # Remove any trailing comma
+    repaired = re.sub(r',\s*$', '', repaired)
+    
+    # Close arrays first (they're usually nested inside objects)
+    while bracket_depth > 0:
+        repaired += ']'
+        bracket_depth -= 1
+    
+    # Close objects
+    while brace_depth > 0:
+        repaired += '}'
+        brace_depth -= 1
+    
+    return repaired
+
+
 def structured_resume_prompt(resume_text, base_url, model):
     """
     STEP 2: Resume Text → Resume JSON
@@ -666,27 +828,153 @@ Resume:
 
 NOTE: Please output only a valid JSON matching the EXACT schema."""
 
-    # Step 2: Extraction - use lower temperature and limit tokens for speed
-    response = call_ollama(prompt, base_url, model,
-                          num_predict=700,      # Limit to ~700 tokens for faster extraction
-                          temperature=0.2,      # Low temperature for consistent extraction
-                          top_p=0.9,            # Nucleus sampling for faster inference
-                          top_k=40)             # Top-k sampling for faster inference
-    if not response:
+    # Step 2: Extraction - use lower temperature but allow more tokens for complete JSON
+    print(f"Step 2: Calling Ollama with model={model}, base_url={base_url}")
+    print(f"Step 2: Resume text length={len(resume_text)} chars, prompt length={len(prompt)} chars")
+    try:
+        # Use higher token limit for resume extraction (resumes can be long)
+        # Try 3000 tokens first, but some models may have limits
+        response = call_ollama(prompt, base_url, model,
+                              num_predict=3000,     # Increased further to prevent JSON truncation
+                              temperature=0.2,      # Low temperature for consistent extraction
+                              top_p=0.9,            # Nucleus sampling for faster inference
+                              top_k=40)             # Top-k sampling for faster inference
+    except Exception as e:
+        print(f"ERROR: Step 2 - Exception calling call_ollama: {e}")
+        import traceback
+        traceback.print_exc()
         return None
     
-    # Try to extract JSON from response
-    json_match = re.search(r'\{.*\}', response, re.DOTALL)
-    if json_match:
-        json_str = json_match.group(0)
+    if not response:
+        print("ERROR: Step 2 - call_ollama returned None (no response from API)")
+        print(f"ERROR: This usually means:")
+        print(f"  1. Ollama API returned an error (check server logs above)")
+        print(f"  2. The model '{model}' doesn't exist (run 'ollama list' to check)")
+        print(f"  3. Ollama service is not running")
+        print(f"  4. The prompt was too long (current length: {len(prompt)} chars)")
+        return None
+    
+    print(f"Step 2: Received response from Ollama, length={len(response)} chars")
+    
+    # Try to extract JSON from response (similar to Step 1)
+    # First try to find JSON wrapped in code blocks (use greedy match to capture full JSON)
+    code_block_match = re.search(r'```(?:json)?\s*(\{.*\})\s*```', response, re.DOTALL)
+    if code_block_match:
+        json_str = code_block_match.group(1)
     else:
-        json_str = response
+        # Try to find JSON object directly
+        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(0)
+        else:
+            # JSON might be incomplete - try to find starting brace and fix it
+            json_match = re.search(r'\{.*', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+                # Try to fix incomplete JSON by finding balanced braces
+                # Count braces to find the last valid closing brace
+                brace_count = 0
+                last_valid_pos = -1
+                for i, char in enumerate(json_str):
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            last_valid_pos = i
+                            break
+                
+                if last_valid_pos > 0:
+                    # We found a balanced JSON structure
+                    json_str = json_str[:last_valid_pos + 1]
+                else:
+                    # No balanced structure found - try to close it manually
+                    # This is a fallback - add closing brace if missing
+                    if json_str.strip() and not json_str.strip().endswith('}'):
+                        json_str = json_str.rstrip() + '\n}'
+            else:
+                json_str = response
     
     try:
-        return json.loads(json_str)
+        parsed_json = json.loads(json_str)
+        if not isinstance(parsed_json, dict):
+            print(f"ERROR: Step 2 - Parsed JSON is not a dict, type: {type(parsed_json)}")
+            print(f"ERROR: Step 2 - JSON string was: {json_str[:500]}")
+            return None
+        print(f"Step 2: Successfully parsed JSON, got {len(parsed_json)} top-level keys")
+        return parsed_json
     except json.JSONDecodeError as e:
-        print(f"Error parsing resume JSON: {e}")
-        print(f"Response was: {response[:500]}")
+        print(f"ERROR: Step 2 - JSON decode error: {e}")
+        print(f"ERROR: Step 2 - Response was: {response[:1000]}")
+        print(f"ERROR: Step 2 - Extracted JSON string was: {json_str[:1000]}")
+        
+        # Try to repair incomplete JSON
+        if "Unterminated string" in str(e) or "Expecting" in str(e):
+            print(f"WARNING: Step 2 - JSON appears to be truncated. Attempting to repair...")
+            repaired_json = repair_incomplete_json(json_str)
+            if repaired_json:
+                try:
+                    parsed_json = json.loads(repaired_json)
+                    if isinstance(parsed_json, dict):
+                        print(f"SUCCESS: Step 2 - Successfully repaired and parsed truncated JSON")
+                        print(f"Step 2: Successfully parsed JSON, got {len(parsed_json)} top-level keys")
+                        return parsed_json
+                    else:
+                        print(f"ERROR: Step 2 - Repaired JSON is not a dict, type: {type(parsed_json)}")
+                except json.JSONDecodeError as repair_error:
+                    print(f"ERROR: Step 2 - First repair attempt failed: {repair_error}")
+                    # Try a more aggressive repair: remove the last incomplete element more aggressively
+                    print(f"WARNING: Step 2 - Attempting more aggressive repair...")
+                    # Find the last complete array element by looking for pattern: "complete string",\n
+                    # This is a simpler heuristic: find the last line that ends with ", and is a complete string
+                    lines = repaired_json.split('\n')
+                    repaired_lines = []
+                    found_incomplete = False
+                    for line in lines:
+                        line_stripped = line.strip()
+                        # If we find a line that looks like an incomplete string (starts with " but doesn't end with ",)
+                        if found_incomplete:
+                            continue  # Skip incomplete lines
+                        if line_stripped.startswith('"') and not line_stripped.endswith('",') and not line_stripped.endswith('"'):
+                            # This might be the start of an incomplete string
+                            # Check if previous line was complete
+                            if repaired_lines and repaired_lines[-1].strip().endswith('",'):
+                                # Previous was complete, skip this incomplete one
+                                found_incomplete = True
+                                continue
+                        repaired_lines.append(line)
+                    
+                    if found_incomplete:
+                        # Reconstruct and try to close structures
+                        aggressive_repair = '\n'.join(repaired_lines).rstrip()
+                        # Remove trailing comma
+                        aggressive_repair = re.sub(r',\s*$', '', aggressive_repair)
+                        # Close arrays and objects (count them)
+                        brace_count = aggressive_repair.count('{') - aggressive_repair.count('}')
+                        bracket_count = aggressive_repair.count('[') - aggressive_repair.count(']')
+                        aggressive_repair += ']' * bracket_count + '}' * brace_count
+                        
+                        try:
+                            parsed_json = json.loads(aggressive_repair)
+                            if isinstance(parsed_json, dict):
+                                print(f"SUCCESS: Step 2 - Aggressive repair succeeded")
+                                print(f"Step 2: Successfully parsed JSON, got {len(parsed_json)} top-level keys")
+                                return parsed_json
+                        except:
+                            pass
+                    
+                    print(f"ERROR: Step 2 - Could not repair JSON after multiple attempts")
+                    print(f"ERROR: Step 2 - Last repair attempt result: {repaired_json[:1000]}")
+                except Exception as repair_error:
+                    print(f"ERROR: Step 2 - Unexpected error repairing JSON: {repair_error}")
+            else:
+                print(f"ERROR: Step 2 - Could not repair JSON. Consider increasing num_predict or using a model with longer context.")
+        return None
+    except Exception as e:
+        print(f"ERROR: Step 2 - Unexpected error parsing JSON: {e}")
+        print(f"ERROR: Step 2 - Response was: {response[:1000] if response else 'No response'}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -741,7 +1029,7 @@ Original Resume (JSON):
 
     # Step 3: Keyword Analysis - moderate temperature and token limit
     response = call_ollama(prompt, base_url, model,
-                          num_predict=1000,     # Limit to ~1000 tokens for keyword analysis
+                          num_predict=2000,     # Increased to prevent truncation for keyword analysis
                           temperature=0.3,      # Moderate temperature for analysis
                           top_p=0.9,            # Nucleus sampling for faster inference
                           top_k=40)             # Top-k sampling for faster inference
@@ -773,118 +1061,241 @@ Original Resume (JSON):
         return None
 
 
-def resume_improvement_prompt(raw_job_description, job_json, resume_json, keyword_analysis, base_url, model):
+def resume_improvement_prompt(raw_job_description, job_json, resume_json, job_keywords, resume_keywords, base_url, model):
     """
-    STEP 4: Generate Improvements Based on Keyword Analysis
-    Generates overallFit, improvements, and aspirationalImprovements based on keyword matching from Step 3.
+    COMBINED STEP 3+4: Keyword Analysis + Improvements
+    First identifies matching and missing keywords, then generates overallFit, improvements, and aspirationalImprovements.
     """
-    # Extract only essential info from job description for Step 4 to speed up processing
+    # Validate input types
+    if not isinstance(job_json, dict):
+        print(f"ERROR: resume_improvement_prompt - job_json is not a dict, type: {type(job_json)}")
+        raise TypeError(f"job_json must be a dict, got {type(job_json)}")
+    if not isinstance(resume_json, dict):
+        print(f"ERROR: resume_improvement_prompt - resume_json is not a dict, type: {type(resume_json)}")
+        raise TypeError(f"resume_json must be a dict, got {type(resume_json)}")
+    
+    # Ensure job_keywords and resume_keywords are lists
+    if not isinstance(job_keywords, list):
+        print(f"WARNING: resume_improvement_prompt - job_keywords is not a list, type: {type(job_keywords)}, converting...")
+        if isinstance(job_keywords, dict):
+            # If it's a dict (like keyword_analysis from old API), extract keywords
+            if 'matching' in job_keywords and isinstance(job_keywords['matching'], list):
+                job_keywords = job_keywords['matching']
+            else:
+                job_keywords = []
+        elif isinstance(job_keywords, str):
+            job_keywords = [job_keywords] if job_keywords else []
+        else:
+            job_keywords = []
+    
+    if not isinstance(resume_keywords, list):
+        print(f"WARNING: resume_improvement_prompt - resume_keywords is not a list, type: {type(resume_keywords)}, converting...")
+        if isinstance(resume_keywords, dict):
+            # If it's a dict (like keyword_analysis from old API), extract keywords
+            if 'matching' in resume_keywords and isinstance(resume_keywords['matching'], list):
+                resume_keywords = resume_keywords['matching']
+            else:
+                resume_keywords = []
+        elif isinstance(resume_keywords, str):
+            resume_keywords = [resume_keywords] if resume_keywords else []
+        else:
+            resume_keywords = []
+    
+    # Extract only essential info from job description to speed up processing
     job_description_full = job_json.get("description", "") if isinstance(job_json, dict) else str(job_json)
     job_description = extract_essential_job_info(job_description_full)
-    resume_text = json.dumps(resume_json, indent=2) if isinstance(resume_json, dict) else str(resume_json)
     
-    # Validate keyword_analysis is a dict
-    if not isinstance(keyword_analysis, dict):
-        print(f"Error: keyword_analysis is not a dict, type: {type(keyword_analysis)}")
-        if isinstance(keyword_analysis, str):
-            try:
-                keyword_analysis = json.loads(keyword_analysis)
-            except:
-                keyword_analysis = {'keywords': {'matching': [], 'missing': []}}
-        else:
-            keyword_analysis = {'keywords': {'matching': [], 'missing': []}}
+    # Truncate resume JSON to prevent prompt from being too long
+    # Keep only essential sections: work experience, projects, education, and skills
+    if isinstance(resume_json, dict):
+        truncated_resume = {
+            'personalInfo': resume_json.get('personalInfo', {}),
+            'workExperience': resume_json.get('workExperience', []),
+            'projects': resume_json.get('projects', []),
+            'education': resume_json.get('education', []),
+            'additional': resume_json.get('additional', {})
+        }
+        resume_text = json.dumps(truncated_resume, indent=2)
+        # Limit total resume text to 8000 chars to prevent prompt from being too long
+        if len(resume_text) > 8000:
+            resume_text = resume_text[:8000] + "\n... (truncated)"
+    else:
+        resume_text = str(resume_json)[:8000]
     
-    keywords_section = keyword_analysis.get('keywords', {}) if isinstance(keyword_analysis, dict) else {}
-    if not isinstance(keywords_section, dict):
-        keywords_section = {}
+    job_keywords_str = ", ".join(job_keywords[:30]) if isinstance(job_keywords, list) and job_keywords else "None extracted"
+    resume_keywords_str = ", ".join(resume_keywords[:30]) if isinstance(resume_keywords, list) and resume_keywords else "None extracted"
     
-    matching_keywords = keywords_section.get('matching', []) if isinstance(keywords_section, dict) else []
-    missing_keywords = keywords_section.get('missing', []) if isinstance(keywords_section, dict) else []
-    
-    matching_str = ", ".join(matching_keywords[:20]) if matching_keywords else "None identified"
-    missing_str = ", ".join(missing_keywords[:20]) if missing_keywords else "None"
-    
-    prompt = f"""You are an ATS-focused resume analyst. Based on the keyword analysis below, provide comprehensive improvement recommendations.
+    prompt = f"""Analyze the resume against the job description and provide structured recommendations.
 
-Instructions:
+OUTPUT FORMAT: Return ONLY valid JSON matching the schema below. No markdown, no code blocks, no explanations.
 
-1. REQUIRED: Summarize the overall fit in two short paragraphs (THIS IS MANDATORY - DO NOT SKIP):
-   - details: Analyze the keyword match and explain what this means for the candidate's fit. Mention the biggest gaps and strengths.
-   - commentary: Strategic advice on further improvements or positioning. This field is REQUIRED and must not be empty.
-   The overallFit object is MANDATORY and must always be included in your response.
+KEYWORD ANALYSIS:
+- Extract technical keywords (tools, technologies, languages, frameworks, platforms)
+- "matching": keywords found in BOTH job and resume
+- "missing": important job keywords NOT in resume
+- EXCLUDE soft skills, behavioral traits, generic phrases
+- Include exact matches and variations (e.g., "React" matches "React.js")
 
-2. REQUIRED: Provide 5-8 highly specific, actionable improvement suggestions in the "improvements" array. CRITICAL REQUIREMENTS:
-   - DO NOT suggest adding or modifying a summary/career summary section. Focus on work experience, projects, skills, and education only.
-   - Each suggestion MUST ONLY reference SPECIFIC existing bullet points, projects, or experiences that ACTUALLY EXIST in the resume JSON
-   - NEVER invent, fabricate, or suggest adding experience, technologies, tools, or achievements that are NOT explicitly mentioned in the resume JSON
-   - Be extremely specific: mention the exact company, role, date, and bullet point number/position from their resume
-   - MANDATORY: Each suggestion MUST include a complete "example" field with a fully rewritten bullet point that the candidate can copy and paste directly into their resume
-   - The example must be a complete, polished bullet point that incorporates job-relevant keywords naturally, especially from the missing keywords list
-   - Focus on incorporating missing keywords into existing bullet points where possible
-   - ONLY suggest rewording or rephrasing existing content - NEVER suggest adding new experiences, tools, or technologies that don't appear in the resume
-   - If a job requirement is missing from the resume, DO NOT suggest adding it in this section - save it for "aspirationalImprovements"
-   - NEVER provide vague suggestions like "re-phrase X to emphasize Y" - you MUST provide the actual rewritten text in the example field
-   - The "improvements" array is MANDATORY and must contain at least 5 suggestions - do not skip this section
-   - CRITICAL: Put ONLY realistic improvements based on existing resume content in the "improvements" array
+OVERALL FIT:
+- "details": 2-3 sentences analyzing keyword match, gaps, and strengths
+- "commentary": 1-2 sentences with strategic advice
+- Both fields MUST contain actual text (not empty)
 
-3. REQUIRED: Provide 3-5 "aspirationalImprovements" - suggestions for what COULD be added if the candidate had certain experience. CRITICAL REQUIREMENTS:
-   - These are hypothetical improvements - things that would help IF the candidate had this experience
-   - Focus on critical missing keywords that cannot be addressed by rewriting existing content
-   - Each should have a "suggestion" explaining what experience would be helpful
-   - Each should have an "example" showing what a bullet point would look like IF they had that experience
-   - These are SEPARATE from the "improvements" array - they're aspirational, not based on existing resume content
-   - CRITICAL: Put ONLY hypothetical/aspirational improvements in the "aspirationalImprovements" array
-   - DO NOT put improvements based on existing resume content in this array - those belong in "improvements"
-   - This array is for things the candidate DOESN'T have but WOULD help if they did
+IMPROVEMENTS (5-8 items):
+- Based ONLY on existing resume content
+- Each MUST have both "suggestion" and "example" fields
+- "example": Complete rewritten bullet point incorporating missing keywords
+- Focus on work experience, projects, skills - NOT summary sections
+- Do NOT invent new experiences or technologies
 
-IMPORTANT: 
-- Never suggest changes to summary, career summary, or personal summary sections. Focus exclusively on work experience bullets, projects, skills sections, and education.
-- NEVER invent experience, tools, technologies, or achievements. Only work with what exists in the resume JSON.
-- If a job requirement cannot be addressed by existing resume content, do not suggest adding it in "improvements" - use "aspirationalImprovements" instead.
-
-CRITICAL: You MUST include ALL required fields in the JSON response:
-- overallFit object with details and commentary - THIS IS MANDATORY AND MUST NEVER BE EMPTY OR OMITTED
-- improvements array with at least 5-8 suggestions (ONLY based on existing resume content) - THIS IS MANDATORY, DO NOT SKIP OR LEAVE EMPTY
-- aspirationalImprovements array (0-5 suggestions for hypothetical additions) - This is OPTIONAL
-
-STRICTLY emit JSON that matches the schema below with no extra keys, prose, or markdown.
-
-Schema:
+ASPIRATIONAL IMPROVEMENTS (0-5 items):
+- Hypothetical suggestions for experience the candidate doesn't have
+- Show what WOULD help if they had it
+- Separate from "improvements" array
 
 {IMPROVEMENTS_SCHEMA}
 
-Context:
-Job Description:
-
+JOB DESCRIPTION:
 {job_description}
 
-Keyword Analysis:
-- Matching Keywords (found in both job and resume): {matching_str}
-- Missing Keywords (in job but not in resume): {missing_str}
+RESUME DATA:
+{resume_text}
 
-Original Resume (JSON - use this to create tailored examples based on actual experience):
+Return ONLY valid JSON. Start with {{ and end with }}. No markdown, no code blocks, no explanations."""
 
-{resume_text}"""
-
-    # Step 4: Improvements
-    response = call_ollama(prompt, base_url, model)
-    if not response:
-        return None
+    # Combined Step 3+4: Keyword Analysis + Improvements
+    print(f"Step 3: Calling Ollama API with prompt length={len(prompt)} chars")
+    print(f"Step 3: Model={model}, Base URL={base_url}")
+    print(f"Step 3: Job description length={len(job_description)} chars, Resume text length={len(resume_text)} chars")
     
-    # Parse JSON response
     try:
-        # Try to extract JSON from response
+        response = call_ollama(prompt, base_url, model,
+                              num_predict=5000,     # Increased significantly to prevent truncation (analysis can be long)
+                              temperature=0.2,      # Lower temperature for more consistent, structured output
+                              top_p=0.9,            # Nucleus sampling for faster inference
+                              top_k=40)             # Top-k sampling for faster inference
+    except Exception as e:
+        print(f"ERROR: Step 3 - Exception calling call_ollama: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            'keywords': {'matching': [], 'missing': []},
+            'overallFit': {
+                'details': f'API call failed: {str(e)}. Please check Ollama is running and the model "{model}" exists.',
+                'commentary': 'The improvement analysis could not be completed. Please verify Ollama is running and the model name is correct.'
+            },
+            'improvements': [],
+            'aspirationalImprovements': []
+        }
+    
+    if not response:
+        print("ERROR: Step 3 - call_ollama returned None (no response from API)")
+        print(f"ERROR: This usually means:")
+        print(f"  1. Ollama API returned an error (check server logs above)")
+        print(f"  2. The model '{model}' doesn't exist (run 'ollama list' to check)")
+        print(f"  3. Ollama service is not running")
+        print(f"  4. The prompt was too long (current length: {len(prompt)} chars)")
+        # Return a minimal valid structure instead of None
+        print("WARNING: Step 3 - Returning fallback structure due to API failure")
+        return {
+            'keywords': {'matching': [], 'missing': []},
+            'overallFit': {
+                'details': f'Unable to generate analysis. Check: (1) Ollama is running, (2) Model "{model}" exists, (3) Prompt length ({len(prompt)} chars) is acceptable.',
+                'commentary': 'The improvement analysis could not be completed. Please check server logs for details.'
+            },
+            'improvements': [],
+            'aspirationalImprovements': []
+        }
+    print(f"Step 3: Received response from Ollama, length={len(response)} chars")
+    
+    # Parse JSON response - improved extraction
+    try:
         import re
-        # First try to find JSON wrapped in code blocks
-        code_block_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response, re.DOTALL)
-        if code_block_match:
-            json_str = code_block_match.group(1)
-        else:
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(0)
-            else:
-                json_str = response
+        json_str = None
+        
+        # Strategy 1: Try to find JSON in code blocks (most reliable)
+        code_block_patterns = [
+            r'```(?:json)?\s*(\{.*?\})\s*```',  # Non-greedy match
+            r'```json\s*(\{.*?\})\s*```',       # Explicit json tag
+            r'```\s*(\{.*?\})\s*```'            # Generic code block
+        ]
+        for pattern in code_block_patterns:
+            code_block_match = re.search(pattern, response, re.DOTALL)
+            if code_block_match:
+                json_str = code_block_match.group(1).strip()
+                # Try to parse it - if it works, use it
+                try:
+                    json.loads(json_str)
+                    print(f"Step 3: Found JSON in code block")
+                    break
+                except json.JSONDecodeError:
+                    json_str = None
+                    continue
+        
+        # Strategy 2: Find the first valid JSON object by trying from each opening brace
+        if not json_str:
+            brace_positions = [i for i, char in enumerate(response) if char == '{']
+            for start_pos in brace_positions:
+                # Try to find the matching closing brace
+                depth = 0
+                end_pos = start_pos
+                in_string = False
+                escape_next = False
+                
+                for i in range(start_pos, len(response)):
+                    char = response[i]
+                    if escape_next:
+                        escape_next = False
+                        continue
+                    if char == '\\':
+                        escape_next = True
+                        continue
+                    if char == '"' and not escape_next:
+                        in_string = not in_string
+                        continue
+                    if not in_string:
+                        if char == '{':
+                            depth += 1
+                        elif char == '}':
+                            depth -= 1
+                            if depth == 0:
+                                end_pos = i + 1
+                                break
+                
+                if depth == 0 and end_pos > start_pos:
+                    candidate = response[start_pos:end_pos].strip()
+                    try:
+                        # Validate it's valid JSON
+                        test_parse = json.loads(candidate)
+                        if isinstance(test_parse, dict):
+                            json_str = candidate
+                            print(f"Step 3: Found valid JSON object starting at position {start_pos}")
+                            break
+                    except json.JSONDecodeError:
+                        continue
+        
+        # Strategy 3: Fallback - try the whole response or first/last reasonable chunk
+        if not json_str:
+            # Try the whole response
+            try:
+                json.loads(response.strip())
+                json_str = response.strip()
+                print(f"Step 3: Using entire response as JSON")
+            except json.JSONDecodeError:
+                # Try first 10000 chars (in case response is very long)
+                try:
+                    json.loads(response[:10000].strip())
+                    json_str = response[:10000].strip()
+                    print(f"Step 3: Using first 10000 chars as JSON")
+                except json.JSONDecodeError:
+                    json_str = response.strip()
+                    print(f"WARNING: Step 3 - Could not find valid JSON, using raw response")
+        
+        if not json_str:
+            raise ValueError("Could not extract JSON from response")
+        
+        # Log what we're trying to parse (first 200 chars for debugging)
+        print(f"Step 3: Attempting to parse JSON (first 200 chars): {json_str[:200]}")
         
         result = json.loads(json_str)
         
@@ -904,35 +1315,153 @@ Original Resume (JSON - use this to create tailored examples based on actual exp
         if not isinstance(result.get('improvements'), list):
             print(f"Warning: improvements is not a list, type: {type(result.get('improvements'))}")
             result['improvements'] = []
+        else:
+            # Filter out improvements that don't have examples (they're not useful)
+            original_count = len(result['improvements'])
+            result['improvements'] = [
+                imp for imp in result['improvements']
+                if isinstance(imp, dict) and imp.get('example') and str(imp.get('example', '')).strip()
+            ]
+            filtered_count = len(result['improvements'])
+            if original_count != filtered_count:
+                print(f"WARNING: Filtered out {original_count - filtered_count} improvements without examples (out of {original_count} total)")
         
         # Validate that aspirationalImprovements is an array
         if not isinstance(result.get('aspirationalImprovements'), list):
             print(f"Warning: aspirationalImprovements is not a list, type: {type(result.get('aspirationalImprovements'))}")
             result['aspirationalImprovements'] = []
         
+        # Ensure keywords section exists (required for combined step)
+        if 'keywords' not in result:
+            print("WARNING: Step 3 - keywords section missing from AI response, adding empty section")
+            result['keywords'] = {'matching': [], 'missing': []}
+        if not isinstance(result.get('keywords'), dict):
+            print(f"WARNING: Step 3 - keywords is not a dict, type: {type(result.get('keywords'))}, adding empty section")
+            result['keywords'] = {'matching': [], 'missing': []}
+        if 'matching' not in result['keywords']:
+            result['keywords']['matching'] = []
+        if 'missing' not in result['keywords']:
+            result['keywords']['missing'] = []
+        
         # Log the structure for debugging
+        matching_count = len(result.get('keywords', {}).get('matching', []))
+        missing_count = len(result.get('keywords', {}).get('missing', []))
         improvements_count = len(result.get('improvements', []))
         aspirational_count = len(result.get('aspirationalImprovements', []))
-        print(f"Step 4 result - Improvements: {improvements_count}, Aspirational: {aspirational_count}")
+        print(f"Step 3 result - Keywords: {matching_count} matching, {missing_count} missing | Improvements: {improvements_count}, Aspirational: {aspirational_count}")
         
-        # Ensure overallFit is always present
-        if 'overallFit' not in result or not result.get('overallFit'):
+        # Debug: Log what overallFit looks like from AI
+        if 'overallFit' in result:
+            print(f"DEBUG: Step 3 - overallFit from AI: {result.get('overallFit')}")
+            print(f"DEBUG: Step 3 - overallFit type: {type(result.get('overallFit'))}")
+        
+        # Ensure overallFit is always present and in the correct format
+        # Check if overallFit exists and has actual content (not just empty dict/string)
+        has_overall_fit = False
+        if 'overallFit' in result:
+            overall_fit = result.get('overallFit')
+            if isinstance(overall_fit, dict):
+                # Check if it has non-empty details or commentary
+                details = overall_fit.get('details', '')
+                commentary = overall_fit.get('commentary', '')
+                print(f"DEBUG: Step 3 - overallFit.details: '{details[:100] if details else 'EMPTY'}'")
+                print(f"DEBUG: Step 3 - overallFit.commentary: '{commentary[:100] if commentary else 'EMPTY'}'")
+                if (details and str(details).strip()) or (commentary and str(commentary).strip()):
+                    has_overall_fit = True
+                    print(f"DEBUG: Step 3 - overallFit has content, keeping it")
+            elif isinstance(overall_fit, str) and overall_fit.strip():
+                has_overall_fit = True
+                print(f"DEBUG: Step 3 - overallFit is string with content, will convert")
+        
+        if not has_overall_fit:
+            print(f"WARNING: Step 3 - overallFit is missing or empty, using default")
             result['overallFit'] = {
                 'details': 'Overall fit assessment is being generated. Please review the keyword analysis and improvements below.',
                 'commentary': 'Continue reviewing the suggested improvements to enhance your resume alignment with this position.'
             }
         else:
-            # Ensure both fields exist and are not empty
-            if not result['overallFit'].get('details') or not str(result['overallFit'].get('details', '')).strip():
-                result['overallFit']['details'] = 'The candidate shows alignment with some job requirements. Review the keyword analysis and improvements for specific areas to enhance.'
-            if not result['overallFit'].get('commentary') or not str(result['overallFit'].get('commentary', '')).strip():
-                result['overallFit']['commentary'] = 'Focus on implementing the suggested improvements to strengthen your application.'
+            # Handle case where overallFit is a string instead of an object
+            if isinstance(result['overallFit'], str):
+                print(f"WARNING: Step 3 - overallFit is a string, converting to object structure")
+                overall_fit_text = result['overallFit'].strip()
+                # Split the text into details and commentary (rough heuristic)
+                # If it's short, use it as details; if long, split it
+                if len(overall_fit_text) > 200:
+                    # Try to split at a sentence boundary
+                    sentences = overall_fit_text.split('. ')
+                    mid_point = len(sentences) // 2
+                    details = '. '.join(sentences[:mid_point]) + ('.' if mid_point > 0 else '')
+                    commentary = '. '.join(sentences[mid_point:]) + ('.' if mid_point < len(sentences) else '')
+                else:
+                    details = overall_fit_text
+                    commentary = 'Review the keyword analysis and improvements for specific areas to enhance your resume alignment.'
+                
+                result['overallFit'] = {
+                    'details': details,
+                    'commentary': commentary
+                }
+            elif not isinstance(result['overallFit'], dict):
+                print(f"WARNING: Step 3 - overallFit is not a dict or string, type: {type(result['overallFit'])}, creating default")
+                result['overallFit'] = {
+                    'details': 'Overall fit assessment is being generated. Please review the keyword analysis and improvements below.',
+                    'commentary': 'Continue reviewing the suggested improvements to enhance your resume alignment with this position.'
+                }
+            else:
+                # It's a dict, ensure both fields exist and are not empty
+                if not result['overallFit'].get('details') or not str(result['overallFit'].get('details', '')).strip():
+                    result['overallFit']['details'] = 'The candidate shows alignment with some job requirements. Review the keyword analysis and improvements for specific areas to enhance.'
+                if not result['overallFit'].get('commentary') or not str(result['overallFit'].get('commentary', '')).strip():
+                    result['overallFit']['commentary'] = 'Focus on implementing the suggested improvements to strengthen your application.'
         
         return result
     except json.JSONDecodeError as e:
-        print(f"Error parsing JSON from resume_improvement_prompt: {e}")
-        print(f"Response was: {response[:500]}")
-        return None
+        # This catch block handles cases where JSON extraction/parsing failed
+        print(f"ERROR: Step 3 - JSON decode error: {e}")
+        print(f"ERROR: Step 3 - Error position: {e.pos if hasattr(e, 'pos') else 'unknown'}")
+        print(f"ERROR: Step 3 - Error message: {e.msg if hasattr(e, 'msg') else str(e)}")
+        print(f"ERROR: Step 3 - Full response length: {len(response)} chars")
+        print(f"ERROR: Step 3 - Response first 500 chars: {response[:500]}")
+        print(f"ERROR: Step 3 - Response last 500 chars: {response[-500:]}")
+        if 'json_str' in locals() and json_str:
+            print(f"ERROR: Step 3 - Extracted JSON string length: {len(json_str)} chars")
+            print(f"ERROR: Step 3 - Extracted JSON first 500 chars: {json_str[:500]}")
+            print(f"ERROR: Step 3 - Extracted JSON last 500 chars: {json_str[-500:]}")
+            # Show the problematic area around the error
+            if hasattr(e, 'pos') and e.pos:
+                error_start = max(0, e.pos - 100)
+                error_end = min(len(json_str), e.pos + 100)
+                print(f"ERROR: Step 3 - Area around error (pos {e.pos}): {json_str[error_start:error_end]}")
+        else:
+            print(f"ERROR: Step 3 - No json_str extracted")
+        import traceback
+        traceback.print_exc()
+        # Return a minimal valid structure instead of None
+        print("WARNING: Step 3 - Returning fallback structure due to JSON parse error")
+        return {
+            'keywords': {'matching': [], 'missing': []},
+            'overallFit': {
+                'details': 'Unable to parse AI response. The response may have been truncated or malformed. Please try again or use a model with longer context support.',
+                'commentary': 'The analysis encountered a parsing error. This may be due to the response being cut off or containing invalid JSON. Please retry the analysis or consider using a model with higher token limits.'
+            },
+            'improvements': [],
+            'aspirationalImprovements': []
+        }
+    except Exception as e:
+        print(f"ERROR: Step 3 - Unexpected error: {e}")
+        print(f"Response was: {response[:1000] if response else 'No response'}")
+        import traceback
+        traceback.print_exc()
+        # Return a minimal valid structure instead of None
+        print("WARNING: Step 3 - Returning fallback structure due to exception")
+        return {
+            'keywords': {'matching': [], 'missing': []},
+            'overallFit': {
+                'details': f'Error generating analysis: {str(e)}. Please try again.',
+                'commentary': 'The analysis encountered an error. Please retry.'
+            },
+            'improvements': [],
+            'aspirationalImprovements': []
+        }
 
 
 @ollama_bp.route('/api/ollama/models', methods=['GET'])
@@ -1370,7 +1899,7 @@ def run_full_analysis():
             "step1": None,
             "step2": None,
             "step3": None,
-            "step4": None,
+            "step4": None,  # Note: Step 3 now includes both keywords and improvements
             "messages": [],
             "timings": {}
         }
@@ -1647,11 +2176,11 @@ def run_full_analysis():
         results["step1"] = job_json
         results["step2"] = resume_json
         
-        # Step 3 and Step 4: Run in parallel (Step 4 waits for Step 3's result)
+        # Step 3: Combined Keyword Analysis + Improvements (formerly Step 3 + Step 4)
         step3_start = time.time()
-        results["messages"].append("Starting Step 3 and Step 4 in parallel...")
+        results["messages"].append("Starting Step 3: Keyword Analysis and Improvements...")
         
-        # Extract keywords first (needed for both steps, done outside parallel execution)
+        # Extract keywords first (for reference and validation)
         job_keywords = job_json.get('keywords', []) if isinstance(job_json, dict) else []
         resume_keywords = resume_json.get('keywords', []) if isinstance(resume_json, dict) else []
         
@@ -1698,157 +2227,100 @@ def run_full_analysis():
         job_keywords = list(set([k.lower().strip() for k in job_keywords if k]))
         resume_keywords = list(set([k.lower().strip() for k in resume_keywords if k]))
         
-        # Helper function for Step 3
-        def extract_keyword_analysis():
-            """Extract keyword analysis with caching"""
-            try:
-                step3_inner_start = time.time()
-                # Initialize variables before any try blocks
-                analysis_json = None
-                cached = False
-                
-                # Check cache first - ONLY if cache table exists and entry exists AND matches current job
-                try:
-                    # Verify cache table exists before trying to use it
-                    conn = sqlite3.connect(config["db_path"])
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='keyword_analysis_cache'")
-                    table_exists = cursor.fetchone() is not None
-                    conn.close()
+        # Check cache first - ONLY if cache table exists and entry exists AND matches current job
+        analysis_json = None
+        cached = False
+        try:
+            # Verify cache table exists before trying to use it
+            conn = sqlite3.connect(config["db_path"])
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='keyword_analysis_cache'")
+            table_exists = cursor.fetchone() is not None
+            conn.close()
+            
+            if table_exists:
+                # Only check cache if table exists
+                cached_result = get_keyword_analysis_cache(job_text, resume_path, config)
+                if cached_result and isinstance(cached_result, dict):
+                    # CRITICAL: Validate that cached analysis matches this specific job
+                    # Check if cached analysis references the same job title/company
+                    cached_job_data = cached_result.get('job', {})
+                    if isinstance(cached_job_data, dict):
+                        cached_title = (cached_job_data.get('title') or '').strip()
+                        cached_company = (cached_job_data.get('company') or '').strip()
+                        
+                        # Validate title matches (if both exist)
+                        title_matches = True
+                        if job_title and cached_title:
+                            if cached_title.lower() != job_title.lower():
+                                title_matches = False
+                                print(f"Cache mismatch: Cached title '{cached_title}' doesn't match job title '{job_title}'")
+                        elif job_title and not cached_title:
+                            title_matches = False
+                            print(f"Cache mismatch: Job has title '{job_title}' but cache doesn't")
+                        
+                        # Validate company matches (if both exist)
+                        company_matches = True
+                        if job_company and cached_company:
+                            if cached_company.lower() != job_company.lower():
+                                company_matches = False
+                                print(f"Cache mismatch: Cached company '{cached_company}' doesn't match job company '{job_company}'")
+                        elif job_company and not cached_company:
+                            company_matches = False
+                            print(f"Cache mismatch: Job has company '{job_company}' but cache doesn't")
+                        
+                        # Only use cache if it matches this job
+                        if not title_matches or not company_matches:
+                            print("Warning: Cached analysis doesn't match current job, re-analyzing...")
+                            cached_result = None
                     
-                    if table_exists:
-                        # Only check cache if table exists
-                        cached_result = get_keyword_analysis_cache(job_text, resume_path, config)
-                        if cached_result and isinstance(cached_result, dict):
-                            # CRITICAL: Validate that cached analysis matches this specific job
-                            # Check if cached analysis references the same job title/company
-                            cached_job_data = cached_result.get('job', {})
-                            if isinstance(cached_job_data, dict):
-                                cached_title = (cached_job_data.get('title') or '').strip()
-                                cached_company = (cached_job_data.get('company') or '').strip()
-                                
-                                # Validate title matches (if both exist)
-                                title_matches = True
-                                if job_title and cached_title:
-                                    if cached_title.lower() != job_title.lower():
-                                        title_matches = False
-                                        print(f"Keyword cache mismatch: Cached title '{cached_title}' doesn't match job title '{job_title}'")
-                                elif job_title and not cached_title:
-                                    title_matches = False
-                                    print(f"Keyword cache mismatch: Job has title '{job_title}' but cache doesn't")
-                                
-                                # Validate company matches (if both exist)
-                                company_matches = True
-                                if job_company and cached_company:
-                                    if cached_company.lower() != job_company.lower():
-                                        company_matches = False
-                                        print(f"Keyword cache mismatch: Cached company '{cached_company}' doesn't match job company '{job_company}'")
-                                elif job_company and not cached_company:
-                                    company_matches = False
-                                    print(f"Keyword cache mismatch: Job has company '{job_company}' but cache doesn't")
-                                
-                                # Only use cache if it matches this job
-                                if not title_matches or not company_matches:
-                                    print("Warning: Cached keyword analysis doesn't match current job, re-analyzing...")
-                                    cached_result = None
-                            
-                            # Validate cached analysis has meaningful content
-                            if cached_result and cached_result.get('keywords') and isinstance(cached_result.get('keywords'), dict):
-                                analysis_json = cached_result
-                                cached = True
-                                print("Step 3: Using cached keyword analysis")
-                            else:
-                                # Cached version is invalid, ignore it
-                                if cached_result:
-                                    print("Warning: Cached keyword analysis is invalid, re-analyzing...")
-                                analysis_json = None
+                    # Validate cached analysis has meaningful content (keywords + improvements)
+                    if cached_result and cached_result.get('keywords') and isinstance(cached_result.get('keywords'), dict):
+                        # Check if it also has improvements (new combined format)
+                        if cached_result.get('improvements') or cached_result.get('overallFit'):
+                            analysis_json = cached_result
+                            cached = True
+                            print("Step 3: Using cached analysis (keywords + improvements)")
+                        elif cached_result.get('keywords'):
+                            # Old format - only keywords, need to generate improvements
+                            print("Step 3: Found old cache format (keywords only), will generate improvements")
+                            cached_result = None
                     else:
-                        print("Step 3: Keyword analysis cache table does not exist, skipping cache check")
-                except Exception as e:
-                    # If cache check fails for any reason, proceed without cache
-                    print(f"Warning: Could not check keyword analysis cache: {e}")
-                    analysis_json = None
-                
-                # If not cached or invalid, run the analysis
-                if not analysis_json:
-                    # CRITICAL: Double-check types before any .get() calls
-                    if not isinstance(job_json, dict):
-                        print(f"CRITICAL ERROR: job_json is not a dict at Step 3 start, type: {type(job_json)}, value: {str(job_json)[:200]}")
-                        return None, False, 0.0
-                    if not isinstance(resume_json, dict):
-                        print(f"CRITICAL ERROR: resume_json is not a dict at Step 3 start, type: {type(resume_json)}, value: {str(resume_json)[:200]}")
-                        return None, False, 0.0
-                    
-                    # Let AI prioritize technical keywords - don't filter here
-                    analysis_json = resume_analysis_prompt(
-                        job_json, resume_json,
-                        job_keywords, resume_keywords,
-                        base_url, model
-                    )
-                
-                step3_inner_time = time.time() - step3_inner_start
-                
-                # Validate analysis_json is a dict
-                if not analysis_json:
-                    return None, False, step3_inner_time
-                
-                if isinstance(analysis_json, str):
-                    print(f"Error: analysis_json is a string, not a dict. Value: {analysis_json[:200]}")
-                    return None, False, step3_inner_time
-                
-                if not isinstance(analysis_json, dict):
-                    print(f"Error: analysis_json is not a dict, type: {type(analysis_json)}")
-                    return None, False, step3_inner_time
-                
-                # Return the analysis_json - validation will be done in main code
-                return analysis_json, cached, step3_inner_time
-            except Exception as e:
-                print(f"Error in extract_keyword_analysis: {e}")
-                import traceback
-                traceback.print_exc()
-                return None, False, 0.0
-        
-        # Helper function for Step 4 (depends on Step 3's analysis_json)
-        def extract_improvements(step3_future):
-            """Extract improvements - waits for analysis_json from Step 3"""
-            try:
-                step4_inner_start = time.time()
-                # Wait for Step 3 to complete and get analysis_json
-                analysis_json, cached, step3_time = step3_future.result()
-                
-                if not analysis_json:
-                    return None, step3_time, 0.0
-                
-                improvements_result = resume_improvement_prompt(
-                    job_text, job_json, resume_json, analysis_json, base_url, model
-                )
-                step4_inner_time = time.time() - step4_inner_start
-                return improvements_result, step3_time, step4_inner_time
-            except Exception as e:
-                print(f"Error in extract_improvements: {e}")
-                import traceback
-                traceback.print_exc()
-                return None, 0.0, 0.0
-        
-        # Run Step 3 and Step 4 in parallel (Step 4 waits for Step 3's result)
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            # Submit Step 3
-            step3_future = executor.submit(extract_keyword_analysis)
-            # Submit Step 4 (it will wait for Step 3's result)
-            step4_future = executor.submit(extract_improvements, step3_future)
-            
-            # Wait for both to complete
-            analysis_json, cached, step3_time = step3_future.result()
-            improvements_result, step3_time_from_step4, step4_time = step4_future.result()
-            
-            # Use step3_time from Step 3 (more accurate)
-            if step3_time > 0:
-                step3_time = step3_time
+                        # Cached version is invalid, ignore it
+                        if cached_result:
+                            print("Warning: Cached analysis is invalid, re-analyzing...")
+                        analysis_json = None
             else:
-                step3_time = time.time() - step3_start
+                print("Step 3: Analysis cache table does not exist, skipping cache check")
+        except Exception as e:
+            # If cache check fails for any reason, proceed without cache
+            print(f"Warning: Could not check analysis cache: {e}")
+            analysis_json = None
+        
+        # If not cached or invalid, run the combined analysis
+        if not analysis_json:
+            # CRITICAL: Double-check types before any .get() calls
+            if not isinstance(job_json, dict):
+                print(f"CRITICAL ERROR: job_json is not a dict at Step 3 start, type: {type(job_json)}, value: {str(job_json)[:200]}")
+                return jsonify({"error": "Step 3 failed: Invalid job JSON format", "results": results}), 500
+            if not isinstance(resume_json, dict):
+                print(f"CRITICAL ERROR: resume_json is not a dict at Step 3 start, type: {type(resume_json)}, value: {str(resume_json)[:200]}")
+                return jsonify({"error": "Step 3 failed: Invalid resume JSON format", "results": results}), 500
+            
+            # Combined Step 3+4: Keyword Analysis + Improvements in one call
+            analysis_json = resume_improvement_prompt(
+                job_text, job_json, resume_json,
+                job_keywords, resume_keywords,
+                base_url, model
+            )
+        
+        # Calculate step3_time
+        step3_time = time.time() - step3_start
         
         # Validate analysis_json is a dict
         if not analysis_json:
+            print(f"ERROR: Step 3 - analysis_json is None after {step3_time:.2f}s")
+            print(f"DEBUG: cached={cached}, analysis_json type={type(analysis_json)}")
             return jsonify({"error": f"Step 3 failed: Failed to generate analysis ({step3_time:.2f}s)", "results": results}), 500
         
         if isinstance(analysis_json, str):
@@ -1866,6 +2338,21 @@ def run_full_analysis():
             # Calculate matching and missing keywords
             matching = []
             missing = []
+            
+            # Ensure job_keywords and resume_keywords are lists
+            if not isinstance(job_keywords, list):
+                print(f"WARNING: job_keywords is not a list in fallback keyword calculation, type: {type(job_keywords)}, converting...")
+                if isinstance(job_keywords, str):
+                    job_keywords = [job_keywords] if job_keywords else []
+                else:
+                    job_keywords = []
+            
+            if not isinstance(resume_keywords, list):
+                print(f"WARNING: resume_keywords is not a list in fallback keyword calculation, type: {type(resume_keywords)}, converting...")
+                if isinstance(resume_keywords, str):
+                    resume_keywords = [resume_keywords] if resume_keywords else []
+                else:
+                    resume_keywords = []
             
             for job_kw in job_keywords:
                 # Skip soft skills
@@ -2014,50 +2501,60 @@ def run_full_analysis():
         if not cached and analysis_json and isinstance(analysis_json, dict) and analysis_json.get('keywords'):
             set_keyword_analysis_cache(job_text, resume_path, analysis_json, config)
         
-        results["step3"] = analysis_json
-        if cached:
-            results["messages"].append(f"Step 3 completed: Keyword analysis loaded from cache ({step3_time:.2f}s)")
-        else:
-            results["messages"].append(f"Step 3 completed: Keyword analysis generated successfully ({step3_time:.2f}s)")
+        # Extract keywords and improvements from combined result
+        keywords_section = analysis_json.get('keywords', {}) if isinstance(analysis_json, dict) else {}
         
-        # Run Step 3 and Step 4 in parallel (Step 4 waits for Step 3's result)
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            # Submit Step 3
-            step3_future = executor.submit(extract_keyword_analysis)
-            # Submit Step 4 (it will wait for Step 3's result)
-            step4_future = executor.submit(extract_improvements, step3_future)
-            
-            # Wait for both to complete
-            analysis_json, cached, step3_time = step3_future.result()
-            improvements_result, step3_time_from_step4, step4_time = step4_future.result()
-            
-            # Use step3_time from Step 3 (more accurate)
-            if step3_time > 0:
-                step3_time = step3_time
+        # Extract overallFit and ensure it has content
+        overall_fit = analysis_json.get('overallFit', {}) if isinstance(analysis_json, dict) else {}
+        if isinstance(overall_fit, dict):
+            details = overall_fit.get('details', '')
+            commentary = overall_fit.get('commentary', '')
+            # If overallFit is empty or has no content, use default
+            if not (details and str(details).strip()) and not (commentary and str(commentary).strip()):
+                print(f"WARNING: overallFit is empty in final result, using default")
+                overall_fit = {
+                    'details': 'Overall fit assessment is being generated. Please review the keyword analysis and improvements below.',
+                    'commentary': 'Continue reviewing the suggested improvements to enhance your resume alignment with this position.'
+                }
+        elif isinstance(overall_fit, str) and overall_fit.strip():
+            # Convert string to object
+            if len(overall_fit) > 200:
+                sentences = overall_fit.split('. ')
+                mid_point = len(sentences) // 2
+                details = '. '.join(sentences[:mid_point]) + ('.' if mid_point > 0 else '')
+                commentary = '. '.join(sentences[mid_point:]) + ('.' if mid_point < len(sentences) else '')
             else:
-                step3_time = time.time() - step3_start
-        
-        # Validate improvements_result is a dict if it exists
-        if improvements_result:
-            if isinstance(improvements_result, str):
-                print(f"Error: improvements_result is a string, not a dict. Value: {improvements_result[:200]}")
-                improvements_result = None  # Treat as failed
-            elif not isinstance(improvements_result, dict):
-                print(f"Error: improvements_result is not a dict, type: {type(improvements_result)}")
-                improvements_result = None  # Treat as failed
-        
-        results["timings"]["step4"] = step4_time
-        if improvements_result and isinstance(improvements_result, dict):
-            results["step4"] = improvements_result
-            results["messages"].append(f"Step 4 completed: Improvements generated successfully ({step4_time:.2f}s)")
+                details = overall_fit
+                commentary = 'Review the keyword analysis and improvements for specific areas to enhance your resume alignment.'
+            overall_fit = {'details': details, 'commentary': commentary}
         else:
-            results["messages"].append(f"Step 4 completed with warnings: Improvements may have failed ({step4_time:.2f}s)")
+            # overallFit is missing or invalid, use default
+            print(f"WARNING: overallFit is missing or invalid in final result, using default")
+            overall_fit = {
+                'details': 'Overall fit assessment is being generated. Please review the keyword analysis and improvements below.',
+                'commentary': 'Continue reviewing the suggested improvements to enhance your resume alignment with this position.'
+            }
+        
+        improvements_result = {
+            'overallFit': overall_fit,
+            'improvements': analysis_json.get('improvements', []) if isinstance(analysis_json, dict) else [],
+            'aspirationalImprovements': analysis_json.get('aspirationalImprovements', []) if isinstance(analysis_json, dict) else []
+        }
+        
+        # Store both in results (for backward compatibility)
+        results["step3"] = {'keywords': keywords_section}  # Keep step3 for keywords display
+        results["step4"] = improvements_result  # Keep step4 for improvements display
+        
+        if cached:
+            results["messages"].append(f"Step 3 completed: Analysis loaded from cache ({step3_time:.2f}s)")
+        else:
+            results["messages"].append(f"Step 3 completed: Keyword analysis and improvements generated successfully ({step3_time:.2f}s)")
         
         # Calculate total time
         total_time = time.time() - analysis_start_time
         results["timings"]["total"] = total_time
         results["messages"].append(f"All steps completed successfully! Total time: {total_time:.2f}s")
-        print(f"Analysis completed in {total_time:.2f}s (Step 1: {results['timings'].get('step1', 'N/A')}s, Step 2: {results['timings'].get('step2', 'N/A')}s, Step 3: {step3_time:.2f}s, Step 4: {step4_time:.2f}s)")
+        print(f"Analysis completed in {total_time:.2f}s (Step 1: {results['timings'].get('step1', 'N/A')}s, Step 2: {results['timings'].get('step2', 'N/A')}s, Step 3: {step3_time:.2f}s)")
         
         # Combine Step 3 (keywords) and Step 4 (improvements) for history
         # Ensure all values are safe to access

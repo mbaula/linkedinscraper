@@ -254,6 +254,21 @@
                 </div>
             </div>
 
+            <!-- Default Resume Settings -->
+            <div class="section">
+                <h2>Default Resume</h2>
+                
+                <div class="form-group">
+                    <label>Default Resume</label>
+                    <select id="default_resume" style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 5px; font-size: 14px; box-sizing: border-box;">
+                        <option value="">Loading resumes...</option>
+                    </select>
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        Select a default resume to use for analysis. This will be pre-selected when running analysis.
+                    </small>
+                </div>
+            </div>
+
             <!-- Cover Letter Settings -->
             <div class="section">
                 <h2>Cover Letter Generation</h2>
@@ -368,6 +383,7 @@
 
         // Load configuration on page load
         document.addEventListener('DOMContentLoaded', function() {
+            loadResumes();
             loadConfig();
             setupTagInputs();
             checkSearchStatus();
@@ -379,6 +395,30 @@
                 updateCoverLetterProviderUI(this.value);
             });
         });
+
+        function loadResumes() {
+            fetch('/api/list-resumes')
+                .then(response => response.json())
+                .then(data => {
+                    const select = document.getElementById('default_resume');
+                    if (data.resumes && data.resumes.length > 0) {
+                        select.innerHTML = '<option value="">No default resume</option>';
+                        data.resumes.forEach(function(resume) {
+                            const option = document.createElement('option');
+                            option.value = resume.path;
+                            option.textContent = resume.name;
+                            select.appendChild(option);
+                        });
+                    } else {
+                        select.innerHTML = '<option value="">No PDF files found</option>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading resumes:', error);
+                    const select = document.getElementById('default_resume');
+                    select.innerHTML = '<option value="">Error loading resumes</option>';
+                });
+        }
 
         function updateCoverLetterProviderUI(provider) {
             // Hide all provider-specific settings
@@ -445,6 +485,15 @@
             document.getElementById('days_to_scrape').value = config.days_to_scrape || 10;
             document.getElementById('timespan').value = config.timespan || '';
             document.getElementById('delete_unapplied_jobs_after_days').value = config.delete_unapplied_jobs_after_days || 0;
+
+            // Populate default resume (after resumes are loaded)
+            setTimeout(() => {
+                const defaultResumePath = config.resume_path || '';
+                const defaultResumeSelect = document.getElementById('default_resume');
+                if (defaultResumePath && defaultResumeSelect) {
+                    defaultResumeSelect.value = defaultResumePath;
+                }
+            }, 500);
         }
 
         function addSearchQuery(query = null, index = null) {
@@ -549,6 +598,7 @@
                 days_to_scrape: parseInt(document.getElementById('days_to_scrape').value),
                 timespan: document.getElementById('timespan').value,
                 delete_unapplied_jobs_after_days: parseInt(document.getElementById('delete_unapplied_jobs_after_days').value) || 0,
+                resume_path: document.getElementById('default_resume').value || '',
                 cover_letter_provider: document.getElementById('cover_letter_provider').value,
                 ollama_base_url: document.getElementById('ollama_base_url').value,
                 ollama_model: document.getElementById('ollama_model').value,

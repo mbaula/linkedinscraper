@@ -80,7 +80,7 @@ const AnalysisTemplates = {
     },
 
     /**
-     * Step 3: Match Analysis (always visible)
+     * Step 3: Combined Keyword Analysis + Resume Improvements (always visible)
      */
     getStep3Template: function() {
         return `
@@ -97,6 +97,7 @@ const AnalysisTemplates = {
 
     /**
      * Step 4: Resume Improvements (always visible)
+     * Note: This is now combined with Step 3, but kept for backward compatibility
      */
     getStep4Template: function() {
         return `
@@ -435,8 +436,13 @@ const AnalysisTemplates = {
         
         // Overall Fit - ALWAYS show this section
         const overallFit = analysis.overallFit || {};
+        console.log('formatImprovements - overallFit object:', overallFit);
+        console.log('formatImprovements - overallFit.details:', overallFit.details);
+        console.log('formatImprovements - overallFit.commentary:', overallFit.commentary);
         const details = overallFit.details && String(overallFit.details).trim() ? String(overallFit.details).trim() : null;
         const commentary = overallFit.commentary && String(overallFit.commentary).trim() ? String(overallFit.commentary).trim() : null;
+        console.log('formatImprovements - parsed details:', details);
+        console.log('formatImprovements - parsed commentary:', commentary);
         
         // Always show the section, even if empty
         parts.push(`<div class="result-section" style="background: #e3f2fd; padding: 20px; border-radius: 8px; margin-bottom: 25px; border-left: 5px solid #2196F3;">`);
