@@ -1,4 +1,185 @@
 var selectedJob = null;
+var previewTimeout = null;
+var currentPreviewJobId = null;
+
+// Dark Mode Functions
+function initDarkMode() {
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    updateDarkModeButton(savedTheme);
+}
+
+function toggleDarkMode() {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+    updateDarkModeButton(newTheme);
+}
+
+function updateDarkModeButton(theme) {
+    const icon = document.getElementById('dark-mode-icon');
+    const text = document.getElementById('dark-mode-text');
+    if (icon && text) {
+        if (theme === 'dark') {
+            icon.textContent = '☀️';
+            text.textContent = 'Light';
+        } else {
+            icon.textContent = '🌙';
+            text.textContent = 'Dark';
+        }
+    }
+}
+
+// Job Preview Functions
+let previewCache = {};
+
+async function showJobPreview(event, jobId) {
+    // Clear any existing timeout
+    if (previewTimeout) {
+        clearTimeout(previewTimeout);
+    }
+    
+    // Don't show preview if already showing details for this job
+    if (currentPreviewJobId === jobId) {
+        return;
+    }
+    
+    // Find the job item element
+    const jobItem = document.querySelector(`.job-item[data-job-id="${jobId}"]`);
+    if (!jobItem) return;
+    
+    // Set a small delay before showing preview
+    previewTimeout = setTimeout(async function() {
+        const previewCard = document.getElementById('job-preview-card');
+        if (!previewCard) return;
+        
+        // Get job item position
+        const rect = jobItem.getBoundingClientRect();
+        
+        // Position preview card to the right of the job item
+        const cardWidth = 400;
+        const cardHeight = 500;
+        let left = rect.right + 20;
+        let top = rect.top;
+        
+        // Adjust if card would go off screen to the right
+        if (left + cardWidth > window.innerWidth - 20) {
+            left = rect.left - cardWidth - 20;
+        }
+        // Adjust if card would go off screen to the left
+        if (left < 20) {
+            left = 20;
+        }
+        // Adjust vertical position
+        if (top + cardHeight > window.innerHeight - 20) {
+            top = window.innerHeight - cardHeight - 20;
+        }
+        if (top < 20) {
+            top = 20;
+        }
+        
+        previewCard.style.left = left + 'px';
+        previewCard.style.top = top + 'px';
+        
+        // Check cache first
+        if (previewCache[jobId]) {
+            displayPreview(previewCache[jobId]);
+            previewCard.classList.add('show');
+            currentPreviewJobId = jobId;
+            return;
+        }
+        
+        // Fetch job details
+        try {
+            const response = await fetch('/job_details/' + jobId);
+            const jobData = await response.json();
+            
+            // Cache the data
+            previewCache[jobId] = jobData;
+            
+            // Display preview
+            displayPreview(jobData);
+            previewCard.classList.add('show');
+            currentPreviewJobId = jobId;
+        } catch (error) {
+            console.error('Error fetching job preview:', error);
+        }
+    }, 500); // 500ms delay before showing preview
+}
+
+function displayPreview(jobData) {
+    const previewCard = document.getElementById('job-preview-card');
+    if (!previewCard) return;
+    
+    const titleEl = document.getElementById('preview-title');
+    const companyEl = document.getElementById('preview-company');
+    const locationEl = document.getElementById('preview-location');
+    const dateEl = document.getElementById('preview-date');
+    const descriptionEl = document.getElementById('preview-description');
+    
+    if (titleEl) titleEl.textContent = jobData.title || 'N/A';
+    if (companyEl) companyEl.textContent = jobData.company || 'N/A';
+    if (locationEl) locationEl.textContent = jobData.location || 'N/A';
+    if (dateEl) dateEl.textContent = 'Posted: ' + (jobData.date || 'N/A');
+    
+    if (descriptionEl) {
+        const description = jobData.job_description || '';
+        // Limit description to first 500 characters
+        const truncated = description.length > 500 ? description.substring(0, 500) : description;
+        descriptionEl.textContent = truncated;
+    }
+}
+
+function hideJobPreview() {
+    if (previewTimeout) {
+        clearTimeout(previewTimeout);
+        previewTimeout = null;
+    }
+    
+    const previewCard = document.getElementById('job-preview-card');
+    if (previewCard) {
+        previewCard.classList.remove('show');
+    }
+    currentPreviewJobId = null;
+}
+
+function setupJobPreviewHover() {
+    // Add hover event listeners to all job items
+    const jobItems = document.querySelectorAll('.job-item');
+    jobItems.forEach(function(jobItem) {
+        const jobId = jobItem.getAttribute('data-job-id');
+        if (jobId && !jobItem.hasAttribute('data-preview-setup')) {
+            // Mark as set up to avoid duplicate listeners
+            jobItem.setAttribute('data-preview-setup', 'true');
+            
+            jobItem.addEventListener('mouseenter', function(event) {
+                showJobPreview(event, jobId);
+            });
+            
+            jobItem.addEventListener('mouseleave', function(event) {
+                // Only hide if not moving to preview card
+                const relatedTarget = event.relatedTarget;
+                const previewCard = document.getElementById('job-preview-card');
+                if (!relatedTarget || (relatedTarget !== previewCard && !previewCard.contains(relatedTarget))) {
+                    hideJobPreview();
+                }
+            });
+        }
+    });
+    
+    // Keep preview visible when hovering over it
+    const previewCard = document.getElementById('job-preview-card');
+    if (previewCard) {
+        previewCard.addEventListener('mouseenter', function() {
+            // Keep preview visible
+        });
+        
+        previewCard.addEventListener('mouseleave', function() {
+            hideJobPreview();
+        });
+    }
+}
 
 // Standard country list with ISO codes
 const COUNTRIES = [
@@ -127,6 +308,22 @@ function loadFiltersFromStorage() {
 
 // Search and filter functionality
 document.addEventListener('DOMContentLoaded', function() {
+    // Initialize dark mode
+    initDarkMode();
+    
+    // Set up job preview hover events
+    setupJobPreviewHover();
+    
+    // Re-setup hover events after filters are applied (jobs might be reordered)
+    // Hook into sortJobs function to re-setup hover after sorting
+    const originalSortJobs = sortJobs;
+    sortJobs = function(jobItems, sortOption) {
+        const result = originalSortJobs.apply(this, arguments);
+        // Re-setup hover after a short delay to allow DOM updates
+        setTimeout(setupJobPreviewHover, 50);
+        return result;
+    };
+    
     const searchBar = document.getElementById('search-bar');
     const sortBy = document.getElementById('sort-by');
     const filterDate = document.getElementById('filter-date');
@@ -957,6 +1154,9 @@ function sortJobs(jobItems, sortOption) {
 }
 
 async function showJobDetails(jobId) {
+    // Hide preview when clicking to view details
+    hideJobPreview();
+    
     if (selectedJob !== null) {
         selectedJob.classList.remove('job-item-selected');
     }

@@ -4,17 +4,60 @@
         <meta charset="UTF-8">
         <title>Jobs List</title>
         <style>
+            /* CSS Variables for Light/Dark Mode */
+            :root {
+                --bg-primary: #ffffff;
+                --bg-secondary: #f8f8f8;
+                --bg-tertiary: #e8e8e8;
+                --text-primary: #000000;
+                --text-secondary: #333333;
+                --text-tertiary: #666666;
+                --border-color: #ddd;
+                --shadow: rgba(0,0,0,0.2);
+                --accent-color: #4CAF50;
+                --accent-hover: #45a049;
+                --selected-bg: #c3c3c3;
+                --applied-bg: #c7f3ff;
+                --interview-bg: #c7ffc7;
+                --rejected-bg: #ffc7c7;
+                --saved-bg: #fff9c7;
+                --hidden-bg: #e8e8e8;
+            }
+            
+            [data-theme="dark"] {
+                --bg-primary: #1a1a1a;
+                --bg-secondary: #2d2d2d;
+                --bg-tertiary: #3d3d3d;
+                --text-primary: #ffffff;
+                --text-secondary: #e0e0e0;
+                --text-tertiary: #b0b0b0;
+                --border-color: #444;
+                --shadow: rgba(0,0,0,0.5);
+                --accent-color: #66bb6a;
+                --accent-hover: #81c784;
+                --selected-bg: #4a4a4a;
+                --applied-bg: #1e3a4a;
+                --interview-bg: #1e4a1e;
+                --rejected-bg: #4a1e1e;
+                --saved-bg: #4a3e1e;
+                --hidden-bg: #3d3d3d;
+            }
+            
             body {
                 font-family: Arial, sans-serif;
+                background-color: var(--bg-primary);
+                color: var(--text-primary);
+                transition: background-color 0.3s ease, color 0.3s ease;
             }
             .row {
                 display: flex;
             }
             .column {
                 padding: 10px;
-                box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
+                box-shadow: 0 4px 8px 0 var(--shadow);
                 transition: 0.3s;
                 border-radius: 5px; /* 5px rounded corners */
+                background-color: var(--bg-primary);
             }
             .column:first-child {
                 flex: 25%;
@@ -32,28 +75,30 @@
                 overflow-y: auto;
             }
             .column h2 {
-                color: #4CAF50; /* Green */
+                color: var(--accent-color);
                 text-align: center;
             }
             .job-item {
                 padding: 10px;
                 margin-bottom: 15px;
-                background-color: #f8f8f8;
+                background-color: var(--bg-secondary);
                 border-radius: 5px;
                 text-decoration: none;
-                color: black;
+                color: var(--text-primary);
                 display: block;
+                position: relative;
+                transition: background-color 0.2s ease;
             }
             .job-item:hover {
-                background-color: #e8e8e8;
+                background-color: var(--bg-tertiary);
                 cursor: pointer;
             }
             .job-content h3, .job-content p {
-                color: black;
+                color: var(--text-primary);
                 margin: 0;
             }
             .job-url a {
-                background-color: #4CAF50;
+                background-color: var(--accent-color);
                 color: white;
                 padding: 10px 24px;
                 text-align: center;
@@ -69,7 +114,7 @@
                 white-space: pre-line;
             }
             .job-item.job-item-selected {
-                background-color: #c3c3c3;
+                background-color: var(--selected-bg);
             }
             .button-container {
                 display: flex;
@@ -77,19 +122,19 @@
                 gap: 10px;
             }
             .job-item-applied {
-                background-color: #c7f3ff;
+                background-color: var(--applied-bg);
             }
             .job-item-interview {
-                background-color: #c7ffc7;
+                background-color: var(--interview-bg);
             }
             .job-item-rejected {
-                background-color: #ffc7c7;
+                background-color: var(--rejected-bg);
             }
             .job-item-saved {
-                background-color: #fff9c7;
+                background-color: var(--saved-bg);
             }
             .job-item-hidden {
-                background-color: #e8e8e8;
+                background-color: var(--hidden-bg);
                 opacity: 0.75;
                 position: relative;
                 border-left: 4px solid #9e9e9e;
@@ -154,7 +199,110 @@
             }
             #search-bar:focus, #filter-city:focus, #filter-title:focus, #filter-company:focus, #filter-date:focus, #sort-by:focus {
                 outline: none;
-                border-color: #45a049;
+                border-color: var(--accent-hover);
+            }
+            
+            /* Dark Mode Toggle Button */
+            .dark-mode-toggle {
+                background-color: var(--bg-secondary);
+                border: 2px solid var(--accent-color);
+                color: var(--text-primary);
+                padding: 8px 15px;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 14px;
+                font-weight: bold;
+                transition: all 0.3s;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .dark-mode-toggle:hover {
+                background-color: var(--accent-color);
+                color: white;
+            }
+            
+            /* Job Preview Card */
+            .job-preview-card {
+                position: fixed;
+                z-index: 10000;
+                background-color: var(--bg-primary);
+                border: 2px solid var(--accent-color);
+                border-radius: 8px;
+                box-shadow: 0 8px 16px var(--shadow);
+                padding: 20px;
+                max-width: 400px;
+                max-height: 500px;
+                overflow-y: auto;
+                display: none;
+                pointer-events: none;
+                color: var(--text-primary);
+                transition: opacity 0.2s ease;
+            }
+            .job-preview-card.show {
+                display: block;
+                pointer-events: auto;
+            }
+            .job-preview-card h3 {
+                color: var(--accent-color);
+                margin-top: 0;
+                margin-bottom: 10px;
+                font-size: 18px;
+            }
+            .job-preview-card .preview-company {
+                color: var(--text-secondary);
+                font-weight: bold;
+                margin-bottom: 8px;
+            }
+            .job-preview-card .preview-location {
+                color: var(--text-tertiary);
+                margin-bottom: 12px;
+                font-size: 14px;
+            }
+            .job-preview-card .preview-date {
+                color: var(--text-tertiary);
+                margin-bottom: 15px;
+                font-size: 12px;
+            }
+            .job-preview-card .preview-description {
+                color: var(--text-primary);
+                font-size: 13px;
+                line-height: 1.5;
+                max-height: 300px;
+                overflow-y: auto;
+                white-space: pre-wrap;
+                word-wrap: break-word;
+            }
+            .job-preview-card .preview-description::after {
+                content: '...';
+            }
+            
+            /* Update input and select styles for dark mode */
+            input, select, textarea {
+                background-color: var(--bg-primary);
+                color: var(--text-primary);
+                border-color: var(--border-color);
+            }
+            
+            /* Update multi-select styles */
+            .multi-select-display {
+                background-color: var(--bg-primary);
+                color: var(--text-primary);
+                border-color: var(--accent-color);
+            }
+            .multi-select-dropdown {
+                background-color: var(--bg-primary);
+                border-color: var(--accent-color);
+            }
+            .multi-select-option {
+                color: var(--text-primary);
+            }
+            .multi-select-option:hover {
+                background-color: var(--bg-tertiary);
+            }
+            .multi-select-search {
+                background-color: var(--bg-primary);
+                color: var(--text-primary);
             }
             .job-item.hidden {
                 display: none;
@@ -642,16 +790,20 @@
                 <!-- Display the list of jobs -->
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h2 style="margin: 0;">Jobs List</h2>
-                    <div style="display: flex; gap: 10px;">
-                        <a href="/application_tracker" style="color: #4CAF50; text-decoration: none; font-weight: bold; padding: 8px 15px; border: 2px solid #4CAF50; border-radius: 5px; transition: all 0.3s;">Application Tracker</a>
-                        <a href="/search_config" style="color: #4CAF50; text-decoration: none; font-weight: bold; padding: 8px 15px; border: 2px solid #4CAF50; border-radius: 5px; transition: all 0.3s;">Configure Search</a>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <button class="dark-mode-toggle" id="dark-mode-toggle" onclick="toggleDarkMode()">
+                            <span id="dark-mode-icon">🌙</span>
+                            <span id="dark-mode-text">Dark</span>
+                        </button>
+                        <a href="/application_tracker" style="color: var(--accent-color); text-decoration: none; font-weight: bold; padding: 8px 15px; border: 2px solid var(--accent-color); border-radius: 5px; transition: all 0.3s;">Application Tracker</a>
+                        <a href="/search_config" style="color: var(--accent-color); text-decoration: none; font-weight: bold; padding: 8px 15px; border: 2px solid var(--accent-color); border-radius: 5px; transition: all 0.3s;">Configure Search</a>
                     </div>
                 </div>
-                <input type="text" id="search-bar" placeholder="Search jobs by title, company, or location..." style="width: 100%; padding: 10px; margin-bottom: 15px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; box-sizing: border-box;">
+                <input type="text" id="search-bar" placeholder="Search jobs by title, company, or location..." style="width: 100%; padding: 10px; margin-bottom: 15px; border: 2px solid var(--accent-color); border-radius: 5px; font-size: 14px; box-sizing: border-box; background-color: var(--bg-primary); color: var(--text-primary);">
                 
                 <div id="filter-container" style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
                     <div class="multi-select-wrapper" style="flex: 1; min-width: 200px;">
-                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #4CAF50; font-size: 12px;">City</label>
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: var(--accent-color); font-size: 12px;">City</label>
                         <div class="multi-select" id="filter-city-multi">
                             <div class="multi-select-display" onclick="toggleMultiSelect('city')">
                                 <span class="selected-count" id="city-count">All Cities</span>
@@ -664,7 +816,7 @@
                         </div>
                     </div>
                     <div class="multi-select-wrapper" style="flex: 1; min-width: 200px;">
-                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #4CAF50; font-size: 12px;">Job Title</label>
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: var(--accent-color); font-size: 12px;">Job Title</label>
                         <div class="multi-select" id="filter-title-multi">
                             <div class="multi-select-display" onclick="toggleMultiSelect('title')">
                                 <span class="selected-count" id="title-count">All Job Titles</span>
@@ -677,7 +829,7 @@
                         </div>
                     </div>
                     <div class="multi-select-wrapper" style="flex: 1; min-width: 200px;">
-                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #4CAF50; font-size: 12px;">Company</label>
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: var(--accent-color); font-size: 12px;">Company</label>
                         <div class="multi-select" id="filter-company-multi">
                             <div class="multi-select-display" onclick="toggleMultiSelect('company')">
                                 <span class="selected-count" id="company-count">All Companies</span>
@@ -690,7 +842,7 @@
                         </div>
                     </div>
                     <div class="multi-select-wrapper" style="flex: 1; min-width: 200px;">
-                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #4CAF50; font-size: 12px;">Country</label>
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: var(--accent-color); font-size: 12px;">Country</label>
                         <div class="multi-select" id="filter-country-multi">
                             <div class="multi-select-display" onclick="toggleMultiSelect('country')">
                                 <span class="selected-count" id="country-count">All Countries</span>
@@ -703,7 +855,7 @@
                         </div>
                     </div>
                     <div class="multi-select-wrapper" style="flex: 1; min-width: 200px;">
-                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #4CAF50; font-size: 12px;">Status</label>
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: var(--accent-color); font-size: 12px;">Status</label>
                         <div class="multi-select" id="filter-status-multi">
                             <div class="multi-select-display" onclick="toggleMultiSelect('status')">
                                 <span class="selected-count" id="status-count">All Status</span>
@@ -738,8 +890,8 @@
                 </div>
                 
                 <div id="date-filter-container" style="margin-bottom: 15px;">
-                    <label for="filter-date" style="display: block; margin-bottom: 5px; font-weight: bold; color: #4CAF50;">Date Posted:</label>
-                    <select id="filter-date" style="width: 100%; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; box-sizing: border-box;">
+                    <label for="filter-date" style="display: block; margin-bottom: 5px; font-weight: bold; color: var(--accent-color);">Date Posted:</label>
+                    <select id="filter-date" style="width: 100%; padding: 10px; border: 2px solid var(--accent-color); border-radius: 5px; font-size: 14px; box-sizing: border-box; background-color: var(--bg-primary); color: var(--text-primary);">
                         <option value="">All Dates</option>
                         <option value="24h">Past 24 Hours</option>
                         <option value="3d">Past 3 Days</option>
@@ -750,8 +902,8 @@
                 </div>
                 
                 <div id="sort-container" style="margin-bottom: 15px;">
-                    <label for="sort-by" style="display: block; margin-bottom: 5px; font-weight: bold; color: #4CAF50;">Sort by:</label>
-                    <select id="sort-by" style="width: 100%; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; box-sizing: border-box;">
+                    <label for="sort-by" style="display: block; margin-bottom: 5px; font-weight: bold; color: var(--accent-color);">Sort by:</label>
+                    <select id="sort-by" style="width: 100%; padding: 10px; border: 2px solid var(--accent-color); border-radius: 5px; font-size: 14px; box-sizing: border-box; background-color: var(--bg-primary); color: var(--text-primary);">
                         <option value="date-desc">Date (Newest First)</option>
                         <option value="date-asc">Date (Oldest First)</option>
                         <option value="title-asc">Job Title (A-Z)</option>
@@ -784,6 +936,15 @@
                     </div>
                 </a>
                 {% endfor %}
+                </div>
+                
+                <!-- Job Preview Card -->
+                <div id="job-preview-card" class="job-preview-card">
+                    <h3 id="preview-title"></h3>
+                    <div class="preview-company" id="preview-company"></div>
+                    <div class="preview-location" id="preview-location"></div>
+                    <div class="preview-date" id="preview-date"></div>
+                    <div class="preview-description" id="preview-description"></div>
                 </div>
             </div>
             <div class="column">
