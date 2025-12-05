@@ -1143,17 +1143,23 @@ OVERALL FIT:
 - "commentary": 1-2 sentences with strategic advice
 - Both fields MUST contain actual text (not empty)
 
-IMPROVEMENTS (5-8 items):
+IMPROVEMENTS - CRITICAL REQUIREMENT: MINIMUM 4 ITEMS REQUIRED (target 5-8 items):
 - Based ONLY on existing resume content
 - Each MUST have both "suggestion" and "example" fields
 - "example": Complete rewritten bullet point incorporating missing keywords
 - Focus on work experience, projects, skills - NOT summary sections
 - Do NOT invent new experiences or technologies
+- CRITICAL: You MUST provide at least 4 improvements. This is a hard requirement.
+- If you cannot find 4 improvements based on existing content, provide suggestions for how to reword existing bullet points to better match job keywords, or suggest adding missing keywords to existing descriptions.
+- Each improvement must include a complete "example" field with a rewritten bullet point.
 
-ASPIRATIONAL IMPROVEMENTS (0-5 items):
+ASPIRATIONAL IMPROVEMENTS - CRITICAL REQUIREMENT: MINIMUM 4 ITEMS REQUIRED (target 4-8 items):
 - Hypothetical suggestions for experience the candidate doesn't have
 - Show what WOULD help if they had it
 - Separate from "improvements" array
+- CRITICAL: You MUST provide at least 4 aspirational improvements. This is a hard requirement.
+- These should show what additional experience or skills would strengthen the candidate's fit for this role.
+- Each aspirational improvement must include both "suggestion" and "example" fields.
 
 {IMPROVEMENTS_SCHEMA}
 
@@ -1327,11 +1333,29 @@ Return ONLY valid JSON. Start with {{ and end with }}. No markdown, no code bloc
             filtered_count = len(result['improvements'])
             if original_count != filtered_count:
                 print(f"WARNING: Filtered out {original_count - filtered_count} improvements without examples (out of {original_count} total)")
+            
+            # Validate minimum count requirement
+            if filtered_count < 4:
+                print(f"WARNING: Only {filtered_count} improvements with examples found. Minimum requirement is 4. The AI may need to provide more improvements.")
         
         # Validate that aspirationalImprovements is an array
         if not isinstance(result.get('aspirationalImprovements'), list):
             print(f"Warning: aspirationalImprovements is not a list, type: {type(result.get('aspirationalImprovements'))}")
             result['aspirationalImprovements'] = []
+        else:
+            # Filter out aspirational improvements that don't have examples
+            original_asp_count = len(result['aspirationalImprovements'])
+            result['aspirationalImprovements'] = [
+                imp for imp in result['aspirationalImprovements']
+                if isinstance(imp, dict) and imp.get('example') and str(imp.get('example', '')).strip()
+            ]
+            filtered_asp_count = len(result['aspirationalImprovements'])
+            if original_asp_count != filtered_asp_count:
+                print(f"WARNING: Filtered out {original_asp_count - filtered_asp_count} aspirational improvements without examples (out of {original_asp_count} total)")
+            
+            # Validate minimum count requirement
+            if filtered_asp_count < 4:
+                print(f"WARNING: Only {filtered_asp_count} aspirational improvements with examples found. Minimum requirement is 4. The AI may need to provide more aspirational improvements.")
         
         # Ensure keywords section exists (required for combined step)
         if 'keywords' not in result:

@@ -692,7 +692,7 @@
                 config.OpenAI_Model = document.getElementById('openai_model_cover').value;
             }
 
-            fetch('/api/config', {
+            return fetch('/api/config', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -703,47 +703,53 @@
             .then(data => {
                 if (data.error) {
                     showMessage('Error saving configuration: ' + data.error, 'error');
+                    throw new Error(data.error);
                 } else {
                     showMessage('Configuration saved successfully!', 'success');
                     configData = config;
+                    return data;
                 }
             })
             .catch(error => {
                 showMessage('Error saving configuration: ' + error, 'error');
+                throw error;
             });
         }
 
-        function executeSearch() {
-            // First save the config
-            saveConfig();
+        async function executeSearch() {
+            const btn = document.getElementById('execute-btn');
             
-            // Wait a moment for save to complete, then execute
-            setTimeout(() => {
-                const btn = document.getElementById('execute-btn');
-                btn.disabled = true;
-                btn.innerHTML = 'Executing... <span class="loading"></span>';
+            // Disable button immediately to prevent double-clicks
+            if (btn.disabled) {
+                return; // Already executing
+            }
+            btn.disabled = true;
+            btn.innerHTML = 'Saving & Executing... <span class="loading"></span>';
+            
+            try {
+                // First save the config and wait for it to complete
+                await saveConfig();
                 
-                fetch('/api/search/execute', {
+                // Now execute the search
+                const response = await fetch('/api/search/execute', {
                     method: 'POST'
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        showMessage('Error starting search: ' + data.error, 'error');
-                        btn.disabled = false;
-                        btn.innerHTML = 'Execute Search';
-                    } else {
-                        showMessage('Search started! Check status below.', 'info');
-                        document.getElementById('search-status').style.display = 'block';
-                        checkSearchStatus();
-                    }
-                })
-                .catch(error => {
-                    showMessage('Error executing search: ' + error, 'error');
+                });
+                const data = await response.json();
+                
+                if (data.error) {
+                    showMessage('Error starting search: ' + data.error, 'error');
                     btn.disabled = false;
                     btn.innerHTML = 'Execute Search';
-                });
-            }, 500);
+                } else {
+                    showMessage('Search started! Check status below.', 'info');
+                    document.getElementById('search-status').style.display = 'block';
+                    checkSearchStatus();
+                }
+            } catch (error) {
+                showMessage('Error executing search: ' + error, 'error');
+                btn.disabled = false;
+                btn.innerHTML = 'Execute Search';
+            }
         }
 
         function checkSearchStatus() {
