@@ -40,6 +40,448 @@ if (document.readyState === 'loading') {
     initDarkMode();
 }
 
+// Actions dropdown functions
+function toggleActionsDropdown(jobId) {
+    const dropdown = document.getElementById(`actions-dropdown-${jobId}`);
+    if (dropdown) {
+        // Close all other dropdowns
+        document.querySelectorAll('.actions-dropdown-menu').forEach(menu => {
+            if (menu.id !== `actions-dropdown-${jobId}`) {
+                menu.style.display = 'none';
+            }
+        });
+        // Toggle current dropdown
+        dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+    }
+}
+
+function closeActionsDropdown(jobId) {
+    const dropdown = document.getElementById(`actions-dropdown-${jobId}`);
+    if (dropdown) {
+        dropdown.style.display = 'none';
+    }
+}
+
+// Close dropdowns when clicking outside (only if DOM is ready)
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('click', function(event) {
+            if (!event.target.closest('.job-actions-dropdown')) {
+                document.querySelectorAll('.actions-dropdown-menu').forEach(menu => {
+                    menu.style.display = 'none';
+                });
+            }
+        });
+    });
+} else {
+    document.addEventListener('click', function(event) {
+        if (!event.target.closest('.job-actions-dropdown')) {
+            document.querySelectorAll('.actions-dropdown-menu').forEach(menu => {
+                menu.style.display = 'none';
+            });
+        }
+    });
+}
+
+// Generate Projects function - opens modal and generates/loads project ideas
+async function generateProjects(jobId) {
+    const modal = document.getElementById('projects-modal');
+    const modalContent = document.getElementById('projects-modal-content');
+    
+    if (!modal || !modalContent) {
+        alert('Projects modal not found');
+        return;
+    }
+    
+    // Open modal immediately
+    modal.style.display = 'block';
+    document.body.style.overflow = 'hidden';
+    
+    // Show loading state
+    modalContent.innerHTML = `
+        <div style="text-align: center; padding: 40px;">
+            <div class="loading-spinner" style="display: inline-block; width: 40px; height: 40px; border: 4px solid var(--bg-tertiary); border-top: 4px solid var(--accent-color); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px;"></div>
+            <p style="color: var(--text-primary); font-size: 16px;">Generating project ideas... This may take a minute.</p>
+        </div>
+    `;
+    
+    try {
+        // Fetch job details
+        const jobResponse = await fetch(`/job_details/${jobId}`);
+        const jobData = await jobResponse.json();
+        
+        // Call backend to generate projects
+        const response = await fetch('/api/generate-projects', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                job_id: jobId,
+                job_description: jobData.job_description || jobData.description || ''
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            modalContent.innerHTML = `
+                <div style="padding: 20px; text-align: center;">
+                    <p style="color: var(--error-text); font-size: 16px; margin-bottom: 20px;">Error generating projects: ${result.error}</p>
+                    <button class="job-button" onclick="closeProjectsModal()">Close</button>
+                </div>
+            `;
+        } else {
+            // Display the project ideas - use the returned project_ideas text if available
+            const projectIdeasText = result.project_ideas || null;
+            displayProjectIdeas(jobId, projectIdeasText);
+        }
+    } catch (error) {
+        console.error('Error generating projects:', error);
+        modalContent.innerHTML = `
+            <div style="padding: 20px; text-align: center;">
+                <p style="color: var(--error-text); font-size: 16px; margin-bottom: 20px;">Error generating projects: ${error.message}</p>
+                <button class="job-button" onclick="closeProjectsModal()">Close</button>
+            </div>
+        `;
+    }
+}
+
+// Display project ideas in the modal
+async function displayProjectIdeas(jobId, projectIdeasText) {
+    const modalContent = document.getElementById('projects-modal-content');
+    
+    if (!modalContent) return;
+    
+    // Fetch the latest project ideas from the database
+    try {
+        const response = await fetch(`/api/get-project-ideas/${jobId}`);
+        const result = await response.json();
+        
+        if (result.error) {
+            modalContent.innerHTML = `
+                <div style="padding: 20px; text-align: center;">
+                    <p style="color: var(--error-text); font-size: 16px; margin-bottom: 20px;">Error loading projects: ${result.error}</p>
+                    <button class="job-button" onclick="closeProjectsModal()">Close</button>
+                </div>
+            `;
+            return;
+        }
+        
+        const projectsText = result.project_ideas || projectIdeasText || 'No project ideas available.';
+        const createdAt = result.created_at || '';
+        const updatedAt = result.updated_at || '';
+        
+        // Function to render and display content
+        function renderAndDisplay() {
+            let renderedContent = escapeHtml(projectsText);
+            
+            // Try to render with marked.js if available
+            if (typeof marked !== 'undefined') {
+                try {
+                    marked.setOptions({ breaks: true, gfm: true });
+                    renderedContent = marked.parse(projectsText);
+                } catch (error) {
+                    console.error('Error rendering markdown:', error);
+                    renderedContent = escapeHtml(projectsText);
+                }
+            }
+            
+            // Display the content
+            modalContent.innerHTML = `
+                <div style="padding: 20px;">
+                    <div style="background-color: var(--bg-secondary); padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid var(--accent-color);">
+                        <h3 style="color: var(--accent-color); margin-top: 0;">Project Ideas</h3>
+                        <div style="color: var(--text-tertiary); font-size: 12px;">
+                            ${createdAt ? `<p style="margin: 5px 0;">Created: ${createdAt}</p>` : ''}
+                            ${updatedAt && updatedAt !== createdAt ? `<p style="margin: 5px 0;">Last updated: ${updatedAt}</p>` : ''}
+                        </div>
+                    </div>
+                    <div style="background-color: var(--bg-primary); padding: 20px; border-radius: 8px; border: 1px solid var(--border-color); color: var(--text-primary); max-height: 60vh; overflow-y: auto; font-size: 15px; line-height: 1.8;">${renderedContent}</div>
+                    <div style="text-align: center; margin-top: 20px;">
+                        <button class="job-button" onclick="closeProjectsModal()">Close</button>
+                        <a href="/projects/${jobId}" class="job-button" target="_blank" style="text-decoration: none; display: inline-block;">Open in New Page</a>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Check if marked.js is available, if not wait for it
+        if (typeof marked !== 'undefined') {
+            renderAndDisplay();
+        } else {
+            // Wait a bit for marked.js to load (it should be in the head)
+            const checkMarked = setInterval(function() {
+                if (typeof marked !== 'undefined') {
+                    clearInterval(checkMarked);
+                    renderAndDisplay();
+                }
+            }, 100);
+            
+            // Fallback: if marked.js doesn't load within 2 seconds, show without rendering
+            setTimeout(function() {
+                clearInterval(checkMarked);
+                if (typeof marked === 'undefined') {
+                    console.warn('marked.js not loaded, displaying raw markdown');
+                }
+                renderAndDisplay();
+            }, 2000);
+        }
+    } catch (error) {
+        console.error('Error loading project ideas:', error);
+        // Fallback to displaying the text we received
+        if (projectIdeasText) {
+            // Render markdown using marked.js if available
+            let renderedContent = escapeHtml(projectIdeasText);
+            if (typeof marked !== 'undefined') {
+                try {
+                    marked.setOptions({ breaks: true, gfm: true });
+                    renderedContent = marked.parse(projectIdeasText);
+                } catch (e) {
+                    console.error('Error rendering markdown:', e);
+                    renderedContent = escapeHtml(projectIdeasText);
+                }
+            }
+            
+            modalContent.innerHTML = `
+                <div style="padding: 20px;">
+                    <div style="background-color: var(--bg-primary); padding: 20px; border-radius: 8px; border: 1px solid var(--border-color); color: var(--text-primary); max-height: 60vh; overflow-y: auto; font-size: 15px; line-height: 1.8;">${renderedContent}</div>
+                    <div style="text-align: center; margin-top: 20px;">
+                        <button class="job-button" onclick="closeProjectsModal()">Close</button>
+                    </div>
+                </div>
+            `;
+        } else {
+            modalContent.innerHTML = `
+                <div style="padding: 20px; text-align: center;">
+                    <p style="color: var(--error-text); font-size: 16px; margin-bottom: 20px;">Error loading projects: ${error.message}</p>
+                    <button class="job-button" onclick="closeProjectsModal()">Close</button>
+                </div>
+            `;
+        }
+    }
+}
+
+// Close projects modal
+function closeProjectsModal() {
+    const modal = document.getElementById('projects-modal');
+    if (modal) {
+        modal.style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+}
+
+// Helper function to escape HTML
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Markdown renderer for project ideas
+function renderMarkdown(markdown) {
+    if (!markdown) return '';
+    
+    // Split into lines for processing (don't escape yet - we'll escape in processInlineMarkdown)
+    const lines = markdown.split('\n');
+    const processedLines = [];
+    let inCodeBlock = false;
+    let inList = false;
+    let listType = null; // 'ul' or 'ol'
+    let currentParagraph = [];
+    
+    function flushParagraph() {
+        if (currentParagraph.length > 0) {
+            const paraText = currentParagraph.join(' ').trim();
+            if (paraText) {
+                processedLines.push(`<p style="margin: 15px 0; line-height: 1.8; color: var(--text-primary);">${processInlineMarkdown(paraText)}</p>`);
+            }
+            currentParagraph = [];
+        }
+    }
+    
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmedLine = line.trim();
+        
+        // Handle code blocks
+        if (trimmedLine.startsWith('```')) {
+            flushParagraph();
+            if (inList) {
+                processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
+                inList = false;
+            }
+            if (!inCodeBlock) {
+                inCodeBlock = true;
+                processedLines.push('<pre style="background-color: var(--bg-secondary); padding: 15px; border-radius: 5px; border: 1px solid var(--border-color); overflow-x: auto; margin: 15px 0;"><code style="font-family: \'Courier New\', monospace; font-size: 13px; color: var(--text-primary); white-space: pre-wrap;">');
+            } else {
+                inCodeBlock = false;
+                processedLines.push('</code></pre>');
+            }
+            continue;
+        }
+        
+        if (inCodeBlock) {
+            processedLines.push(escapeHtml(line));
+            continue;
+        }
+        
+        // Headers (check in order from most specific to least)
+        if (trimmedLine.match(/^###\s+(.+)$/)) {
+            flushParagraph();
+            if (inList) {
+                processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
+                inList = false;
+            }
+            const headerText = trimmedLine.replace(/^###\s+/, '').trim();
+            processedLines.push(`<h3 style="color: var(--accent-color); margin: 20px 0 10px 0; font-size: 1.2em; font-weight: bold;">${processInlineMarkdown(headerText)}</h3>`);
+            continue;
+        }
+        if (trimmedLine.match(/^##\s+(.+)$/)) {
+            flushParagraph();
+            if (inList) {
+                processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
+                inList = false;
+            }
+            const headerText = trimmedLine.replace(/^##\s+/, '').trim();
+            processedLines.push(`<h2 style="color: var(--accent-color); margin: 25px 0 15px 0; font-size: 1.4em; border-bottom: 2px solid var(--border-color); padding-bottom: 5px; font-weight: bold;">${processInlineMarkdown(headerText)}</h2>`);
+            continue;
+        }
+        if (trimmedLine.match(/^#\s+(.+)$/)) {
+            flushParagraph();
+            if (inList) {
+                processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
+                inList = false;
+            }
+            const headerText = trimmedLine.replace(/^#\s+/, '').trim();
+            processedLines.push(`<h1 style="color: var(--accent-color); margin: 30px 0 20px 0; font-size: 1.6em; font-weight: bold;">${processInlineMarkdown(headerText)}</h1>`);
+            continue;
+        }
+        
+        // Unordered lists (handle both * and - with optional whitespace)
+        const ulMatch = trimmedLine.match(/^[\*\-][\s]+(.+)$/);
+        if (ulMatch) {
+            flushParagraph();
+            if (!inList || listType !== 'ul') {
+                if (inList) {
+                    processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
+                }
+                processedLines.push('<ul style="margin: 15px 0; padding-left: 25px; line-height: 1.8;">');
+                inList = true;
+                listType = 'ul';
+            }
+            const content = ulMatch[1].trim();
+            processedLines.push(`<li style="margin: 8px 0; padding-left: 5px;">${processInlineMarkdown(content)}</li>`);
+            continue;
+        }
+        
+        // Ordered lists (handle numbered lists with optional whitespace)
+        const olMatch = trimmedLine.match(/^\d+[\.\)][\s]+(.+)$/);
+        if (olMatch) {
+            flushParagraph();
+            if (!inList || listType !== 'ol') {
+                if (inList) {
+                    processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
+                }
+                processedLines.push('<ol style="margin: 15px 0; padding-left: 25px; line-height: 1.8;">');
+                inList = true;
+                listType = 'ol';
+            }
+            const content = olMatch[1].trim();
+            processedLines.push(`<li style="margin: 8px 0; padding-left: 5px;">${processInlineMarkdown(content)}</li>`);
+            continue;
+        }
+        
+        // Blank line - close lists and flush paragraphs
+        if (trimmedLine === '') {
+            flushParagraph();
+            if (inList) {
+                processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
+                inList = false;
+            }
+            continue;
+        }
+        
+        // Regular text - accumulate into paragraph
+        if (inList) {
+            processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
+            inList = false;
+        }
+        
+        currentParagraph.push(trimmedLine);
+    }
+    
+    // Flush any remaining paragraph
+    flushParagraph();
+    
+    // Close any open list
+    if (inList) {
+        processedLines.push(listType === 'ul' ? '</ul>' : '</ol>');
+    }
+    
+    return processedLines.join('\n');
+}
+
+// Process inline markdown (bold, italic, code, links)
+function processInlineMarkdown(text) {
+    if (!text) return '';
+    
+    // Escape HTML first to prevent XSS
+    text = escapeHtml(text);
+    
+    // Inline code first (to avoid conflicts with other formatting)
+    const codePlaceholders = [];
+    let codeIndex = 0;
+    text = text.replace(/`([^`]+)`/g, function(match, code) {
+        const placeholder = `__CODE_${codeIndex}__`;
+        codePlaceholders[codeIndex] = code;
+        codeIndex++;
+        return placeholder;
+    });
+    
+    // Bold (must come before italic to avoid conflicts)
+    const boldPlaceholders = [];
+    let boldIndex = 0;
+    text = text.replace(/\*\*(.*?)\*\*/g, function(match, content) {
+        const placeholder = `__BOLD_${boldIndex}__`;
+        boldPlaceholders[boldIndex] = content;
+        boldIndex++;
+        return placeholder;
+    });
+    text = text.replace(/__(.*?)__/g, function(match, content) {
+        const placeholder = `__BOLD_${boldIndex}__`;
+        boldPlaceholders[boldIndex] = content;
+        boldIndex++;
+        return placeholder;
+    });
+    
+    // Now process italic (single * or _ that aren't part of bold)
+    // Simple approach: match *text* or _text_ where the markers are single (not double)
+    // We already protected bold, so any remaining * or _ can be italic
+    text = text.replace(/\*([^*\n]+?)\*/g, '<em>$1</em>');
+    // For underscore italic, only match if it's not part of a word boundary issue
+    // Match _text_ where _ is not immediately followed or preceded by another _
+    text = text.replace(/([^_])_([^_\n]+?)_([^_])/g, '$1<em>$2</em>$3');
+    // Also handle _ at start/end of string or line
+    text = text.replace(/^_([^_\n]+?)_/gm, '<em>$1</em>');
+    text = text.replace(/_([^_\n]+?)_$/gm, '<em>$1</em>');
+    
+    // Restore bold
+    boldPlaceholders.forEach((content, index) => {
+        text = text.replace(`__BOLD_${index}__`, `<strong style="color: var(--text-primary); font-weight: bold;">${content}</strong>`);
+    });
+    
+    // Restore code
+    codePlaceholders.forEach((code, index) => {
+        text = text.replace(`__CODE_${index}__`, `<code style="background-color: var(--bg-secondary); padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 0.9em; color: var(--accent-color);">${code}</code>`);
+    });
+    
+    // Links (process after everything else)
+    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color: var(--accent-color); text-decoration: none;" target="_blank" rel="noopener noreferrer">$1</a>');
+    
+    return text;
+}
+
 // Job Preview Functions
 let previewCache = {};
 
@@ -1534,6 +1976,7 @@ window.onclick = function(event) {
     var latexModal = document.getElementById('latex-modal');
     var analysisModal = document.getElementById('analysis-modal');
     var analysisHistoryModal = document.getElementById('analysis-history-modal');
+    var projectsModal = document.getElementById('projects-modal');
     if (event.target == modal) {
         closeCoverLetterFullscreen();
     }
@@ -1545,6 +1988,9 @@ window.onclick = function(event) {
     }
     if (event.target == analysisHistoryModal) {
         closeAnalysisHistoryModal();
+    }
+    if (event.target == projectsModal) {
+        closeProjectsModal();
     }
 }
 
@@ -2306,7 +2752,7 @@ function showPipelineResult(step, data) {
                     break;
                 default:
                     // Fallback to JSON for unknown steps
-                    formattedHtml = '<pre style="background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto;">' + escapeHtml(JSON.stringify(data, null, 2)) + '</pre>';
+                    formattedHtml = '<pre style="background: var(--bg-secondary); padding: 15px; border-radius: 5px; overflow-x: auto; color: var(--text-primary); border: 1px solid var(--border-color);">' + escapeHtml(JSON.stringify(data, null, 2)) + '</pre>';
             }
         }
         
@@ -2391,10 +2837,10 @@ async function openAnalysisModal(jobId) {
     let html = AnalysisTemplates.getModalContent();
     
     // Inject resume and model options (replace the empty select tags)
-    html = html.replace('<select id="resume-selector" style="width: 100%; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; background-color: white;">', 
-                        '<select id="resume-selector" style="width: 100%; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; background-color: white;">' + resumeOptions);
-    html = html.replace('<select id="analysis-model-selector" style="width: 100%; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; background-color: white;">', 
-                        '<select id="analysis-model-selector" style="width: 100%; padding: 10px; border: 2px solid #4CAF50; border-radius: 5px; font-size: 14px; background-color: white;">' + modelOptions);
+    html = html.replace('<select id="resume-selector" style="width: 100%; padding: 10px; border: 2px solid var(--accent-color); border-radius: 5px; font-size: 14px; background-color: var(--bg-primary); color: var(--text-primary);">', 
+                        '<select id="resume-selector" style="width: 100%; padding: 10px; border: 2px solid var(--accent-color); border-radius: 5px; font-size: 14px; background-color: var(--bg-primary); color: var(--text-primary);">' + resumeOptions);
+    html = html.replace('<select id="analysis-model-selector" style="width: 100%; padding: 10px; border: 2px solid var(--accent-color); border-radius: 5px; font-size: 14px; background-color: var(--bg-primary); color: var(--text-primary);">', 
+                        '<select id="analysis-model-selector" style="width: 100%; padding: 10px; border: 2px solid var(--accent-color); border-radius: 5px; font-size: 14px; background-color: var(--bg-primary); color: var(--text-primary);">' + modelOptions);
     
     // Set up button click handler - use event listener only (no onclick attribute to avoid double-firing)
     html = html.replace('id="run-full-analysis-btn"', `id="run-full-analysis-btn"`);

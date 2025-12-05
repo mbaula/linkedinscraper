@@ -1780,6 +1780,167 @@ def save_analysis():
         return jsonify({"error": str(e)}), 500
 
 
+@ollama_bp.route('/api/generate-projects', methods=['POST'])
+def generate_projects():
+    """API endpoint to generate project ideas for a job"""
+    config = current_app.config['CONFIG']
+    try:
+        data = request.get_json()
+        job_id = data.get('job_id')
+        job_description = data.get('job_description', '')
+        
+        if not job_id:
+            return jsonify({"error": "job_id is required"}), 400
+        
+        if not job_description:
+            # Try to get job description from database
+            job = get_job_by_id(job_id, config)
+            if job:
+                job_description = job.get('job_description') or job.get('description') or ''
+        
+        if not job_description:
+            return jsonify({"error": "job_description is required"}), 400
+        
+        # Create the prompt
+        prompt = f"""I'm applying for the following role:
+
+{job_description}
+
+Generate a list of software project ideas that would directly strengthen my application for this role.
+
+Follow these rules:
+
+Generate a diverse set of project ideas (you do not need to target a specific number), but make sure you cover a good spread of scope and ambition.
+
+Categorize them by difficulty level:
+
+- Beginner (1–2 weeks)
+
+- Intermediate (2–6 weeks)
+
+- Advanced (6–12+ weeks)
+
+- Unique / High-Creativity (any timeline; unusual, inventive, but still relevant to the role)
+
+For each project, include:
+
+- Project Name
+
+- 1–2 sentence overview
+
+- Why this project matches the job description
+
+- Estimated time to complete
+
+- Key technologies & concepts practiced
+
+Ensure projects align tightly with the role's responsibilities, such as:
+
+- Identity & authentication
+
+- Attack detection / mitigation
+
+- Cloud systems (AWS/Azure)
+
+- Distributed systems
+
+- Security engineering
+
+- Machine-learning-assisted security models
+
+- High-scale/low-latency services
+
+- Protocols like OAuth/OIDC/SAML
+
+Ensure the list includes a mix of:
+
+- Small, quick-win projects
+
+- Portfolio-ready intermediate builds
+
+- At least one capstone-level project showing staff-level ownership
+
+- A few especially creative or unique projects that are non-obvious but clearly relevant
+
+Make the output concrete, specific, and implementable — not generic."""
+        
+        # Get Ollama config
+        base_url = config.get("ollama_base_url", "http://localhost:11434")
+        model = config.get("ollama_model", "llama3.2:latest")
+        
+        # Call Ollama
+        print(f"Generating project ideas for job {job_id}...")
+        response = call_ollama(prompt, base_url, model, num_predict=4000, temperature=0.7)
+        
+        if not response:
+            return jsonify({"error": "Failed to generate project ideas"}), 500
+        
+        # Save to database
+        conn = sqlite3.connect(config["db_path"])
+        cursor = conn.cursor()
+        
+        # Check if project ideas already exist for this job
+        cursor.execute("SELECT id FROM project_ideas WHERE job_id = ?", (job_id,))
+        existing = cursor.fetchone()
+        
+        if existing:
+            # Update existing
+            cursor.execute(
+                "UPDATE project_ideas SET project_ideas_text = ?, updated_at = CURRENT_TIMESTAMP WHERE job_id = ?",
+                (response, job_id)
+            )
+        else:
+            # Insert new
+            cursor.execute(
+                "INSERT INTO project_ideas (job_id, project_ideas_text) VALUES (?, ?)",
+                (job_id, response)
+            )
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            "success": True, 
+            "message": "Project ideas generated successfully",
+            "project_ideas": response
+        }), 200
+        
+    except Exception as e:
+        print(f"Error generating projects: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@ollama_bp.route('/api/get-project-ideas/<int:job_id>', methods=['GET'])
+def get_project_ideas(job_id):
+    """API endpoint to get project ideas for a job"""
+    config = current_app.config['CONFIG']
+    try:
+        conn = sqlite3.connect(config["db_path"])
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT project_ideas_text, created_at, updated_at FROM project_ideas WHERE job_id = ?",
+            (job_id,)
+        )
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result:
+            return jsonify({
+                "success": True,
+                "project_ideas": result[0],
+                "created_at": result[1],
+                "updated_at": result[2]
+            }), 200
+        else:
+            return jsonify({"error": "No project ideas found for this job"}), 404
+            
+    except Exception as e:
+        print(f"Error getting project ideas: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @ollama_bp.route('/api/analysis-history/<int:job_id>', methods=['GET'])
 def get_analysis_history(job_id):
     """API endpoint to get analysis history for a job"""

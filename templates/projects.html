@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Project Ideas - {{ job.title }}</title>
+    <link rel="stylesheet" href="/static/dark_mode.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            background-color: var(--bg-primary);
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px var(--shadow);
+        }
+        h1 {
+            color: var(--accent-color);
+            margin-bottom: 10px;
+        }
+        .nav-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: var(--accent-color);
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .nav-link:hover {
+            text-decoration: underline;
+        }
+        .job-info {
+            background-color: var(--bg-secondary);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            border-left: 4px solid var(--accent-color);
+        }
+        .job-info h2 {
+            color: var(--accent-color);
+            margin-top: 0;
+        }
+        .job-info p {
+            color: var(--text-secondary);
+            margin: 5px 0;
+        }
+        .projects-content {
+            background-color: var(--bg-primary);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            max-height: 70vh;
+            overflow-y: auto;
+            font-size: 15px;
+            line-height: 1.8;
+        }
+        .projects-content h1,
+        .projects-content h2,
+        .projects-content h3 {
+            color: var(--accent-color);
+            margin: 20px 0 10px 0;
+        }
+        .projects-content h1 {
+            font-size: 1.6em;
+            margin: 30px 0 20px 0;
+        }
+        .projects-content h2 {
+            font-size: 1.4em;
+            margin: 25px 0 15px 0;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 5px;
+        }
+        .projects-content h3 {
+            font-size: 1.2em;
+            margin: 20px 0 10px 0;
+        }
+        .projects-content p {
+            margin: 15px 0;
+            line-height: 1.8;
+        }
+        .projects-content ul,
+        .projects-content ol {
+            margin: 15px 0;
+            padding-left: 25px;
+            line-height: 1.8;
+        }
+        .projects-content li {
+            margin: 8px 0;
+        }
+        .projects-content code {
+            background-color: var(--bg-secondary);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            color: var(--accent-color);
+        }
+        .projects-content pre {
+            background-color: var(--bg-secondary);
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+            overflow-x: auto;
+            margin: 15px 0;
+        }
+        .projects-content pre code {
+            background-color: transparent;
+            padding: 0;
+            color: var(--text-primary);
+        }
+        .projects-content strong {
+            color: var(--text-primary);
+            font-weight: bold;
+        }
+        .projects-content a {
+            color: var(--accent-color);
+            text-decoration: none;
+        }
+        .projects-content a:hover {
+            text-decoration: underline;
+        }
+        .no-projects {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-tertiary);
+        }
+        .no-projects p {
+            margin: 10px 0;
+        }
+        .metadata {
+            color: var(--text-tertiary);
+            font-size: 12px;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border-color);
+        }
+        .header-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: background-color 0.3s;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn-primary {
+            background-color: var(--accent-color);
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: var(--accent-hover);
+        }
+    </style>
+</head>
+<body>
+    {% include 'navbar.html' %}
+    
+    <div class="container">
+        <h1>Project Ideas</h1>
+        
+        <div class="job-info">
+            <h2>{{ job.title }}</h2>
+            <p><strong>Company:</strong> {{ job.company }}</p>
+            <p><strong>Location:</strong> {{ job.location }}</p>
+            <p><strong>Date:</strong> {{ job.date }}</p>
+        </div>
+        
+        {% if project_ideas %}
+        <script type="application/json" id="project-ideas-data">{{ project_ideas|tojson }}</script>
+        <div class="projects-content" id="projects-content"></div>
+        <div class="metadata">
+            {% if created_at %}
+            <p>Created: {{ created_at }}</p>
+            {% endif %}
+            {% if updated_at and updated_at != created_at %}
+            <p>Last updated: {{ updated_at }}</p>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="no-projects">
+            <p>No project ideas generated yet.</p>
+            <p>Go back to the job details and click "Generate Projects" to create project ideas for this role.</p>
+            <a href="/" class="btn btn-primary" style="margin-top: 20px;">Back to Jobs List</a>
+        </div>
+        {% endif %}
+    </div>
+    
+    <script src="/static/job_actions.js"></script>
+    <script>
+        // Render markdown when page loads and job_actions.js is ready
+        function renderProjectContent() {
+            const content = document.getElementById('projects-content');
+            if (!content) {
+                console.error('projects-content element not found');
+                return;
+            }
+            
+            // Get markdown from JSON script tag
+            const dataScript = document.getElementById('project-ideas-data');
+            let markdown = '';
+            
+            if (dataScript) {
+                try {
+                    markdown = JSON.parse(dataScript.textContent);
+                } catch (e) {
+                    console.error('Error parsing project ideas JSON:', e);
+                    markdown = dataScript.textContent || '';
+                }
+            }
+            
+            if (!markdown || !markdown.trim()) {
+                console.warn('No project ideas content found');
+                content.innerHTML = '<p style="color: var(--text-tertiary);">No project ideas content available.</p>';
+                return;
+            }
+            
+            // Use marked.js to render markdown
+            if (typeof marked !== 'undefined') {
+                try {
+                    // Configure marked options
+                    marked.setOptions({
+                        breaks: true,
+                        gfm: true
+                    });
+                    const rendered = marked.parse(markdown);
+                    if (rendered && rendered.trim()) {
+                        content.innerHTML = rendered;
+                    } else {
+                        content.innerHTML = '<pre style="white-space: pre-wrap; font-family: inherit; color: var(--text-primary);">' + escapeHtml(markdown) + '</pre>';
+                    }
+                } catch (error) {
+                    console.error('Error rendering markdown with marked.js:', error);
+                    content.innerHTML = '<pre style="white-space: pre-wrap; font-family: inherit; color: var(--text-primary);">' + escapeHtml(markdown) + '</pre>';
+                }
+            } else {
+                console.error('marked.js library not loaded');
+                content.innerHTML = '<pre style="white-space: pre-wrap; font-family: inherit; color: var(--text-primary);">' + escapeHtml(markdown) + '</pre>';
+            }
+        }
+        
+        // Helper function for HTML escaping
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Wait for marked.js to load
+        function waitForMarked() {
+            if (typeof marked !== 'undefined') {
+                renderProjectContent();
+            } else {
+                setTimeout(waitForMarked, 100);
+            }
+        }
+        
+        // Start waiting when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', waitForMarked);
+        } else {
+            waitForMarked();
+        }
+    </script>
+</body>
+</html>
+

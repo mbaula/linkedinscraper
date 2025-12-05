@@ -238,18 +238,13 @@
     </style>
 </head>
 <body>
+    {% include 'navbar.html' %}
+    
     <div class="container">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <a href="/" class="nav-link">← Back to Jobs List</a>
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <button onclick="toggleKeyboardHelp()" style="background: none; border: 2px solid var(--accent-color); color: var(--accent-color); padding: 8px 12px; border-radius: 50%; cursor: pointer; font-size: 18px; font-weight: bold; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; transition: all 0.2s;" title="Keyboard Shortcuts (Press ? for help)">?</button>
-                <button onclick="toggleDarkMode()" class="dark-mode-toggle" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; background-color: var(--bg-secondary); border: 2px solid var(--accent-color); border-radius: 20px; cursor: pointer; font-size: 14px; color: var(--text-primary); transition: all 0.2s;">
-                    <span id="dark-mode-icon">🌙</span>
-                    <span id="dark-mode-text">Dark</span>
-                </button>
-            </div>
+            <h1 style="margin: 0;">Search Configuration</h1>
+            <button onclick="toggleKeyboardHelp()" style="background: none; border: 2px solid var(--accent-color); color: var(--accent-color); padding: 8px 12px; border-radius: 50%; cursor: pointer; font-size: 18px; font-weight: bold; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; transition: all 0.2s;" title="Keyboard Shortcuts (Press ? for help)">?</button>
         </div>
-        <h1>Search Configuration</h1>
         
         <div id="status-message" class="status-message"></div>
         

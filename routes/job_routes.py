@@ -181,3 +181,94 @@ def unmark_interview(job_id):
     print(f'Updating job_id: {job_id} to unmark interview')
     update_job_status(job_id, 'interview', 0, config)
     return jsonify({"success": "Job unmarked as interview"}), 200
+
+
+@job_bp.route('/projects/<int:job_id>')
+def view_projects(job_id):
+    """Display project ideas for a job"""
+    import sqlite3
+    config = current_app.config['CONFIG']
+    
+    # Get job details
+    job = get_job_by_id(job_id, config)
+    if not job:
+        return "Job not found", 404
+    
+    # Get project ideas from database
+    conn = sqlite3.connect(config["db_path"])
+    cursor = conn.cursor()
+    cursor.execute("SELECT project_ideas_text, created_at, updated_at FROM project_ideas WHERE job_id = ?", (job_id,))
+    result = cursor.fetchone()
+    conn.close()
+    
+    project_ideas = None
+    created_at = None
+    updated_at = None
+    
+    if result:
+        project_ideas = result[0]
+        created_at = result[1]
+        updated_at = result[2]
+    
+    return render_template('projects.html', job=job, project_ideas=project_ideas, created_at=created_at, updated_at=updated_at)
+
+
+@job_bp.route('/projects/history')
+def projects_history():
+    """Display all project ideas history"""
+    import sqlite3
+    config = current_app.config['CONFIG']
+    
+    # Get all project ideas with job information
+    conn = sqlite3.connect(config["db_path"])
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT 
+            pi.id,
+            pi.job_id,
+            pi.project_ideas_text,
+            pi.created_at,
+            pi.updated_at,
+            j.title,
+            j.company,
+            j.location,
+            j.job_description
+        FROM project_ideas pi
+        LEFT JOIN jobs j ON pi.job_id = j.id
+        ORDER BY pi.created_at DESC
+    """)
+    results = cursor.fetchall()
+    conn.close()
+    
+    # Format the results
+    projects = []
+    for row in results:
+        projects.append({
+            'id': row[0],
+            'job_id': row[1],
+            'project_ideas_text': row[2],
+            'created_at': row[3],
+            'updated_at': row[4],
+            'job_title': row[5] or 'Unknown',
+            'company': row[6] or 'Unknown',
+            'location': row[7] or '',
+            'job_description': row[8] or ''
+        })
+    
+    return render_template('projects_history.html', projects=projects)
+
+
+@job_bp.route('/api/projects/<int:project_id>', methods=['DELETE'])
+def delete_project(project_id):
+    """Delete a project idea entry"""
+    import sqlite3
+    config = current_app.config['CONFIG']
+    try:
+        conn = sqlite3.connect(config["db_path"])
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM project_ideas WHERE id = ?", (project_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True, "message": "Project idea deleted successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

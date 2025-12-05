@@ -162,6 +162,20 @@ def verify_db_schema(config_dict):
         """)
         conn.commit()
         print("Verified keyword_analysis_cache table exists")
+        
+        # Create project_ideas table if it doesn't exist
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS project_ideas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL,
+                project_ideas_text TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (job_id) REFERENCES jobs(id)
+            )
+        """)
+        conn.commit()
+        print("Verified project_ideas table exists")
     finally:
         close_db_connection(conn)
 

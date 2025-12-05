@@ -179,21 +179,14 @@
     </style>
 </head>
 <body>
+    {% include 'navbar.html' %}
+    
     <div class="container">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <div>
-                <a href="/" class="nav-link">← Back to Jobs List</a>
-                <h1 style="margin: 10px 0 0 0;">Job Application Tracker</h1>
-            </div>
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <button onclick="toggleDarkMode()" class="dark-mode-toggle" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; background-color: var(--bg-secondary); border: 2px solid var(--accent-color); border-radius: 20px; cursor: pointer; font-size: 14px; color: var(--text-primary); transition: all 0.2s;">
-                    <span id="dark-mode-icon">🌙</span>
-                    <span id="dark-mode-text">Dark</span>
-                </button>
-                <button id="export-btn" class="btn btn-primary" onclick="exportToCSV()" style="padding: 10px 20px; font-size: 14px;">
-                    Export to CSV
-                </button>
-            </div>
+            <h1 style="margin: 0;">Job Application Tracker</h1>
+            <button id="export-btn" class="btn btn-primary" onclick="exportToCSV()" style="padding: 10px 20px; font-size: 14px;">
+                Export to CSV
+            </button>
         </div>
         
         <div id="status-message" class="status-message"></div>

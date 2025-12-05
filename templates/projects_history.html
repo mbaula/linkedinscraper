@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Project Ideas History</title>
+    <link rel="stylesheet" href="/static/dark_mode.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            background-color: var(--bg-primary);
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px var(--shadow);
+        }
+        h1 {
+            color: var(--accent-color);
+            margin-bottom: 20px;
+        }
+        .project-card {
+            background-color: var(--bg-secondary);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid var(--accent-color);
+            transition: box-shadow 0.2s ease;
+        }
+        .project-card:hover {
+            box-shadow: 0 4px 8px var(--shadow);
+        }
+        .project-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .project-info {
+            flex: 1;
+        }
+        .project-info h2 {
+            color: var(--accent-color);
+            margin: 0 0 10px 0;
+            font-size: 1.3em;
+        }
+        .project-info p {
+            color: var(--text-secondary);
+            margin: 5px 0;
+        }
+        .project-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: background-color 0.3s;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn-primary {
+            background-color: var(--accent-color);
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: var(--accent-hover);
+        }
+        .btn-secondary {
+            background-color: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+        .btn-secondary:hover {
+            background-color: var(--bg-quaternary);
+        }
+        .btn-danger {
+            background-color: #f44336;
+            color: white;
+        }
+        .btn-danger:hover {
+            background-color: #da190b;
+        }
+        .project-preview {
+            background-color: var(--bg-primary);
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+            margin-top: 15px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 14px;
+            line-height: 1.8;
+            color: var(--text-primary);
+        }
+        .project-preview h1,
+        .project-preview h2,
+        .project-preview h3 {
+            color: var(--accent-color);
+            margin: 15px 0 8px 0;
+        }
+        .project-preview h1 { font-size: 1.4em; }
+        .project-preview h2 { font-size: 1.3em; }
+        .project-preview h3 { font-size: 1.1em; }
+        .project-preview p {
+            margin: 10px 0;
+            line-height: 1.8;
+        }
+        .project-preview ul,
+        .project-preview ol {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .project-preview li {
+            margin: 5px 0;
+        }
+        .project-preview code {
+            background-color: var(--bg-secondary);
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            color: var(--accent-color);
+        }
+        .project-preview pre {
+            background-color: var(--bg-secondary);
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+        .project-preview pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        .project-preview strong {
+            font-weight: bold;
+        }
+        .project-preview a {
+            color: var(--accent-color);
+            text-decoration: none;
+        }
+        .project-preview a:hover {
+            text-decoration: underline;
+        }
+        .project-preview.expanded {
+            max-height: none;
+        }
+        .toggle-preview {
+            color: var(--accent-color);
+            cursor: pointer;
+            font-size: 12px;
+            margin-top: 10px;
+            text-decoration: underline;
+        }
+        .toggle-preview:hover {
+            color: var(--accent-hover);
+        }
+        .metadata {
+            color: var(--text-tertiary);
+            font-size: 12px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border-color);
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 40px;
+            color: var(--text-tertiary);
+        }
+        .empty-state h2 {
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+        .job-description-preview {
+            background-color: var(--bg-primary);
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            max-height: 100px;
+            overflow-y: auto;
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+        .search-filter {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: var(--bg-secondary);
+            border-radius: 8px;
+        }
+        .search-filter input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid var(--border-color);
+            border-radius: 5px;
+            font-size: 14px;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            box-sizing: border-box;
+        }
+        .search-filter input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+        }
+    </style>
+</head>
+<body>
+    {% include 'navbar.html' %}
+    
+    <div class="container">
+        <h1>Project Ideas History</h1>
+        
+        {% if projects %}
+        <div class="search-filter">
+            <input type="text" id="search-input" placeholder="Search by company, job title, or location..." onkeyup="filterProjects()">
+        </div>
+        
+        <div id="projects-container">
+            {% for project in projects %}
+            <div class="project-card" data-company="{{ project.company|lower }}" data-title="{{ project.job_title|lower }}" data-location="{{ project.location|lower }}" data-project-id="{{ project.id }}">
+                <div class="project-header">
+                    <div class="project-info">
+                        <h2>{{ project.job_title }}</h2>
+                        <p><strong>Company:</strong> {{ project.company }}</p>
+                        {% if project.location %}
+                        <p><strong>Location:</strong> {{ project.location }}</p>
+                        {% endif %}
+                        <div class="job-description-preview">
+                            {{ project.job_description[:200] }}{% if project.job_description|length > 200 %}...{% endif %}
+                        </div>
+                    </div>
+                    <div class="project-actions">
+                        <a href="/projects/{{ project.job_id }}" class="btn btn-primary" target="_blank">View Full</a>
+                        <a href="/job_details/{{ project.job_id }}" class="btn btn-secondary">View Job</a>
+                        <button class="btn btn-danger" onclick="deleteProject({{ project.id }}, {{ project.job_id }})" style="background-color: #f44336; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: bold; transition: background-color 0.3s;">Delete</button>
+                    </div>
+                </div>
+                
+                <div class="project-preview" id="preview-{{ project.id }}">
+                    {{ project.project_ideas_text[:500] }}{% if project.project_ideas_text|length > 500 %}...{% endif %}
+                </div>
+                
+                {% if project.project_ideas_text|length > 500 %}
+                <span class="toggle-preview" onclick="togglePreview({{ project.id }}, {{ project.project_ideas_text|length }})">Show more</span>
+                {% endif %}
+                
+                <div class="metadata">
+                    <p>Created: {{ project.created_at }}</p>
+                    {% if project.updated_at and project.updated_at != project.created_at %}
+                    <p>Last updated: {{ project.updated_at }}</p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <h2>No Project Ideas Generated Yet</h2>
+            <p>Go to a job listing and click "Generate Projects" to create project ideas.</p>
+            <a href="/" class="btn btn-primary" style="margin-top: 20px;">Go to Jobs List</a>
+        </div>
+        {% endif %}
+    </div>
+    
+    <script src="/static/job_actions.js"></script>
+    <script>
+        const fullProjectTexts = {};
+        {% for project in projects %}
+        fullProjectTexts[{{ project.id }}] = {{ (project.project_ideas_text or '')|tojson|safe }};
+        {% endfor %}
+        
+        // Render markdown for all previews on page load using marked.js
+        function renderMarkdownWithLibrary(text) {
+            if (typeof marked !== 'undefined') {
+                marked.setOptions({ breaks: true, gfm: true });
+                return marked.parse(text);
+            }
+            // Fallback to plain text
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // Wait for marked.js to load
+            function waitForMarked() {
+                if (typeof marked !== 'undefined') {
+                    {% for project in projects %}
+                    (function() {
+                        const previewText = document.getElementById('preview-text-{{ project.id }}');
+                        if (previewText) {
+                            const text = previewText.textContent || previewText.innerText;
+                            previewText.innerHTML = renderMarkdownWithLibrary(text);
+                        }
+                    })();
+                    {% endfor %}
+                } else {
+                    setTimeout(waitForMarked, 100);
+                }
+            }
+            waitForMarked();
+        });
+        
+        function togglePreview(projectId, fullLength) {
+            const preview = document.getElementById(`preview-${projectId}`);
+            const previewText = document.getElementById(`preview-text-${projectId}`);
+            const toggle = preview.nextElementSibling;
+            
+            if (!preview || !previewText || !toggle) return;
+            
+            if (preview.classList.contains('expanded')) {
+                const shortText = fullProjectTexts[projectId].substring(0, 500) + '...';
+                previewText.innerHTML = renderMarkdownWithLibrary(shortText);
+                preview.classList.remove('expanded');
+                toggle.textContent = 'Show more';
+            } else {
+                previewText.innerHTML = renderMarkdownWithLibrary(fullProjectTexts[projectId]);
+                preview.classList.add('expanded');
+                toggle.textContent = 'Show less';
+            }
+        }
+        
+        function filterProjects() {
+            const input = document.getElementById('search-input');
+            const filter = input.value.toLowerCase();
+            const cards = document.querySelectorAll('.project-card');
+            
+            cards.forEach(card => {
+                const company = card.getAttribute('data-company') || '';
+                const title = card.getAttribute('data-title') || '';
+                const location = card.getAttribute('data-location') || '';
+                
+                if (company.includes(filter) || title.includes(filter) || location.includes(filter)) {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        }
+        
+        function deleteProject(projectId, jobId) {
+            if (!confirm('Are you sure you want to delete this project idea? This action cannot be undone.')) {
+                return;
+            }
+            
+            fetch(`/api/projects/${projectId}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Error deleting project: ' + data.error);
+                } else {
+                    // Remove the project card from the page
+                    const card = document.querySelector(`.project-card[data-project-id="${projectId}"]`);
+                    if (card) {
+                        card.style.transition = 'opacity 0.3s ease';
+                        card.style.opacity = '0';
+                        setTimeout(() => {
+                            card.remove();
+                            // Check if no projects left
+                            const remainingCards = document.querySelectorAll('.project-card');
+                            if (remainingCards.length === 0) {
+                                window.location.reload();
+                            }
+                        }, 300);
+                    } else {
+                        // Fallback: reload page
+                        window.location.reload();
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting project:', error);
+                alert('Error deleting project: ' + error.message);
+            });
+        }
+    </script>
+</body>
+</html>
+

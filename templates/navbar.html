@@ -1,0 +1,62 @@
+<nav style="background-color: var(--bg-secondary); padding: 15px 20px; border-bottom: 2px solid var(--accent-color); margin-bottom: 20px; position: sticky; top: 0; z-index: 1000; box-shadow: 0 2px 4px var(--shadow);">
+    <div style="max-width: 1400px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+        <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+            <a href="/" style="color: var(--accent-color); text-decoration: none; font-size: 20px; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                <span>💼</span>
+                <span>Job Scraper</span>
+            </a>
+            <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                <a href="/" class="nav-link-item" id="nav-jobs">Jobs List</a>
+                <a href="/application_tracker" class="nav-link-item" id="nav-tracker">Application Tracker</a>
+                <a href="/projects/history" class="nav-link-item" id="nav-projects">Project History</a>
+                <a href="/search_config" class="nav-link-item" id="nav-config">Configure Search</a>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <button onclick="toggleDarkMode()" class="dark-mode-toggle" style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; background-color: var(--bg-primary); border: 2px solid var(--accent-color); border-radius: 20px; cursor: pointer; font-size: 14px; color: var(--text-primary); transition: all 0.2s;">
+                <span id="dark-mode-icon">🌙</span>
+                <span id="dark-mode-text">Dark</span>
+            </button>
+        </div>
+    </div>
+</nav>
+<style>
+    .nav-link-item {
+        color: var(--text-primary);
+        text-decoration: none;
+        padding: 8px 15px;
+        border-radius: 5px;
+        transition: all 0.2s;
+        font-weight: 500;
+    }
+    .nav-link-item:hover {
+        background-color: var(--bg-tertiary);
+        color: var(--accent-color);
+    }
+    .nav-link-item.active {
+        background-color: var(--accent-color);
+        color: white;
+    }
+</style>
+<script>
+    // Highlight active nav item based on current page
+    (function() {
+        const path = window.location.pathname;
+        const navItems = {
+            '/': 'nav-jobs',
+            '/application_tracker': 'nav-tracker',
+            '/projects/history': 'nav-projects',
+            '/search_config': 'nav-config'
+        };
+        
+        for (const [route, id] of Object.entries(navItems)) {
+            if (path === route || (route === '/' && path === '/')) {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.classList.add('active');
+                }
+            }
+        }
+    })();
+</script>
+
