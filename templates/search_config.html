@@ -717,15 +717,15 @@
         }
 
         async function executeSearch() {
-            const btn = document.getElementById('execute-btn');
+                const btn = document.getElementById('execute-btn');
             
             // Disable button immediately to prevent double-clicks
             if (btn.disabled) {
                 return; // Already executing
             }
-            btn.disabled = true;
+                btn.disabled = true;
             btn.innerHTML = 'Saving & Executing... <span class="loading"></span>';
-            
+                
             try {
                 // First save the config and wait for it to complete
                 await saveConfig();
@@ -736,19 +736,19 @@
                 });
                 const data = await response.json();
                 
-                if (data.error) {
-                    showMessage('Error starting search: ' + data.error, 'error');
+                    if (data.error) {
+                        showMessage('Error starting search: ' + data.error, 'error');
+                        btn.disabled = false;
+                        btn.innerHTML = 'Execute Search';
+                    } else {
+                        showMessage('Search started! Check status below.', 'info');
+                        document.getElementById('search-status').style.display = 'block';
+                        checkSearchStatus();
+                    }
+            } catch (error) {
+                    showMessage('Error executing search: ' + error, 'error');
                     btn.disabled = false;
                     btn.innerHTML = 'Execute Search';
-                } else {
-                    showMessage('Search started! Check status below.', 'info');
-                    document.getElementById('search-status').style.display = 'block';
-                    checkSearchStatus();
-                }
-            } catch (error) {
-                showMessage('Error executing search: ' + error, 'error');
-                btn.disabled = false;
-                btn.innerHTML = 'Execute Search';
             }
         }
 

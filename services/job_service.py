@@ -245,3 +245,52 @@ def read_jobs_from_db(config_path='config.json', include_hidden=False):
     finally:
         close_db_connection(conn)
 
+
+def delete_jobs_older_than_date(cutoff_date, config_dict):
+    """
+    Delete jobs older than the specified date.
+    
+    Args:
+        cutoff_date (str): Date in YYYY-MM-DD format. Jobs with date < this will be deleted.
+        config_dict (dict): Configuration dictionary
+        
+    Returns:
+        tuple: (deleted_count, error_message)
+    """
+    from datetime import datetime
+    
+    conn = get_db_connection(config_dict=config_dict)
+    cursor = conn.cursor()
+    
+    try:
+        # Validate the cutoff date format
+        try:
+            datetime.strptime(cutoff_date, "%Y-%m-%d")
+        except ValueError:
+            return (0, "Invalid date format. Expected YYYY-MM-DD")
+        
+        # Get count of jobs that will be deleted (jobs with date < cutoff_date)
+        # Only delete jobs that have a valid date (not NULL or empty)
+        cursor.execute("""
+            SELECT COUNT(*) FROM jobs 
+            WHERE date IS NOT NULL AND date != '' AND date < ?
+        """, (cutoff_date,))
+        
+        count = cursor.fetchone()[0]
+        
+        if count == 0:
+            return (0, None)
+        
+        # Delete jobs older than the cutoff date
+        cursor.execute("""
+            DELETE FROM jobs 
+            WHERE date IS NOT NULL AND date != '' AND date < ?
+        """, (cutoff_date,))
+        
+        conn.commit()
+        return (count, None)
+    except Exception as e:
+        conn.rollback()
+        return (0, str(e))
+    finally:
+        close_db_connection(conn)

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Delete Old Jobs</title>
+        <link rel="stylesheet" href="/static/dark_mode.css">
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                margin: 0;
+                padding: 20px;
+            }
+            .container {
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+                background-color: var(--bg-primary);
+                border-radius: 10px;
+                box-shadow: 0 4px 8px var(--shadow);
+            }
+            h1 {
+                color: var(--accent-color);
+                margin-bottom: 10px;
+            }
+            .warning-box {
+                background-color: #fff3cd;
+                border: 2px solid #ffc107;
+                border-radius: 5px;
+                padding: 15px;
+                margin-bottom: 20px;
+                color: #856404;
+            }
+            .warning-box.dark {
+                background-color: #3d2f00;
+                border-color: #ffc107;
+                color: #ffc107;
+            }
+            .form-group {
+                margin-bottom: 20px;
+            }
+            label {
+                display: block;
+                margin-bottom: 8px;
+                font-weight: bold;
+                color: var(--text-primary);
+            }
+            .date-input-wrapper {
+                position: relative;
+                display: inline-block;
+                width: 100%;
+            }
+            input[type="date"] {
+                width: 100%;
+                padding: 12px 45px 12px 12px;
+                border: 2px solid var(--accent-color);
+                border-radius: 5px;
+                font-size: 16px;
+                box-sizing: border-box;
+                background-color: var(--bg-secondary);
+                color: var(--text-primary);
+            }
+            .calendar-icon {
+                position: absolute;
+                right: 12px;
+                top: 50%;
+                transform: translateY(-50%);
+                pointer-events: none;
+                font-size: 20px;
+                color: var(--text-secondary);
+            }
+            .delete-button {
+                padding: 12px 30px;
+                background-color: #f44336;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 16px;
+                font-weight: bold;
+                transition: background-color 0.3s;
+                width: 100%;
+                margin-top: 10px;
+            }
+            .delete-button:hover:not(:disabled) {
+                background-color: #d32f2f;
+            }
+            .delete-button:disabled {
+                background-color: #ccc;
+                cursor: not-allowed;
+            }
+            .status-message {
+                margin-top: 15px;
+                padding: 12px;
+                border-radius: 5px;
+                display: none;
+                font-size: 14px;
+            }
+            .status-message.success {
+                background-color: #4caf50;
+                color: white;
+                display: block;
+            }
+            .status-message.error {
+                background-color: #f44336;
+                color: white;
+                display: block;
+            }
+            .info-text {
+                color: var(--text-secondary);
+                font-size: 14px;
+                margin-top: 5px;
+            }
+        </style>
+    </head>
+    <body>
+        {% include 'navbar.html' %}
+        
+        <div class="container">
+            <h1>🗑️ Delete Old Jobs</h1>
+            <p style="color: var(--text-secondary); margin-bottom: 20px;">
+                Permanently delete all jobs from the database that are older than the selected date.
+            </p>
+            
+            <div class="warning-box" id="warning-box">
+                <strong>⚠️ Warning:</strong> This action cannot be undone! All jobs older than the selected date will be permanently deleted from the database.
+            </div>
+            
+            <form id="delete-form" onsubmit="event.preventDefault(); deleteOldJobs();">
+                <div class="form-group">
+                    <label for="cutoff-date">Delete jobs older than:</label>
+                    <div class="date-input-wrapper">
+                        <input type="date" id="cutoff-date" name="cutoff-date" required>
+                        <span class="calendar-icon">📅</span>
+                    </div>
+                    <p class="info-text">Only jobs with a valid date that is older than the selected date will be deleted.</p>
+                </div>
+                
+                <button type="submit" id="delete-button" class="delete-button">
+                    Delete Old Jobs
+                </button>
+            </form>
+            
+            <div id="status-message" class="status-message"></div>
+        </div>
+        
+        <script>
+            // Update warning box styling based on theme
+            function updateWarningBox() {
+                const theme = document.documentElement.getAttribute('data-theme') || 'light';
+                const warningBox = document.getElementById('warning-box');
+                if (theme === 'dark') {
+                    warningBox.classList.add('dark');
+                } else {
+                    warningBox.classList.remove('dark');
+                }
+            }
+            
+            // Initialize theme
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', updateWarningBox);
+            } else {
+                updateWarningBox();
+            }
+            
+            // Watch for theme changes
+            const observer = new MutationObserver(updateWarningBox);
+            observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+            
+            async function deleteOldJobs() {
+                const cutoffDateInput = document.getElementById('cutoff-date');
+                const deleteButton = document.getElementById('delete-button');
+                const statusMessage = document.getElementById('status-message');
+                
+                if (!cutoffDateInput || !cutoffDateInput.value) {
+                    statusMessage.className = 'status-message error';
+                    statusMessage.textContent = 'Please select a cutoff date';
+                    statusMessage.style.display = 'block';
+                    return;
+                }
+                
+                const cutoffDate = cutoffDateInput.value;
+                
+                // Confirm deletion
+                const confirmMessage = `Are you absolutely sure you want to PERMANENTLY DELETE all jobs older than ${cutoffDate}?\n\nThis action cannot be undone and will remove jobs from the database permanently!`;
+                if (!confirm(confirmMessage)) {
+                    return;
+                }
+                
+                // Double confirmation
+                const doubleConfirm = confirm('This is your last chance to cancel. Click OK to proceed with permanent deletion.');
+                if (!doubleConfirm) {
+                    return;
+                }
+                
+                // Disable button and show loading state
+                deleteButton.disabled = true;
+                deleteButton.textContent = 'Deleting...';
+                statusMessage.style.display = 'none';
+                
+                try {
+                    const response = await fetch('/api/jobs/delete_older_than', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ cutoff_date: cutoffDate })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        statusMessage.className = 'status-message success';
+                        statusMessage.textContent = data.message || `Successfully deleted ${data.deleted_count} job(s) from the database`;
+                        statusMessage.style.display = 'block';
+                        
+                        // Reset form
+                        cutoffDateInput.value = '';
+                        deleteButton.disabled = false;
+                        deleteButton.textContent = 'Delete Old Jobs';
+                    } else {
+                        statusMessage.className = 'status-message error';
+                        statusMessage.textContent = 'Error: ' + (data.error || 'Failed to delete jobs');
+                        statusMessage.style.display = 'block';
+                        deleteButton.disabled = false;
+                        deleteButton.textContent = 'Delete Old Jobs';
+                    }
+                } catch (error) {
+                    statusMessage.className = 'status-message error';
+                    statusMessage.textContent = 'Error: ' + error.message;
+                    statusMessage.style.display = 'block';
+                    deleteButton.disabled = false;
+                    deleteButton.textContent = 'Delete Old Jobs';
+                }
+            }
+        </script>
+    </body>
+</html>
+

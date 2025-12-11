@@ -6,7 +6,8 @@ from services.job_service import (
     get_all_jobs as get_all_jobs_service,
     get_job_by_id,
     update_job_status,
-    read_jobs_from_db
+    read_jobs_from_db,
+    delete_jobs_older_than_date
 )
 
 # Create blueprint
@@ -270,5 +271,37 @@ def delete_project(project_id):
         conn.commit()
         conn.close()
         return jsonify({"success": True, "message": "Project idea deleted successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@job_bp.route('/delete_old_jobs')
+def delete_old_jobs_page():
+    """Display the delete old jobs page"""
+    return render_template('delete_old_jobs.html')
+
+
+@job_bp.route('/api/jobs/delete_older_than', methods=['POST'])
+def delete_jobs_older_than():
+    """Delete jobs older than the specified date from the database"""
+    config = current_app.config['CONFIG']
+    
+    try:
+        data = request.get_json()
+        cutoff_date = data.get('cutoff_date')
+        
+        if not cutoff_date:
+            return jsonify({"error": "cutoff_date is required"}), 400
+        
+        deleted_count, error = delete_jobs_older_than_date(cutoff_date, config)
+        
+        if error:
+            return jsonify({"error": error}), 400
+        
+        return jsonify({
+            "success": True,
+            "message": f"Permanently deleted {deleted_count} job(s) older than {cutoff_date} from the database",
+            "deleted_count": deleted_count
+        }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
