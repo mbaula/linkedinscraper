@@ -249,6 +249,7 @@ def read_jobs_from_db(config_path='config.json', include_hidden=False):
 def delete_jobs_older_than_date(cutoff_date, config_dict):
     """
     Delete jobs older than the specified date.
+    Jobs that have been applied to, saved, interviewed, or rejected will NOT be deleted.
     
     Args:
         cutoff_date (str): Date in YYYY-MM-DD format. Jobs with date < this will be deleted.
@@ -271,9 +272,14 @@ def delete_jobs_older_than_date(cutoff_date, config_dict):
         
         # Get count of jobs that will be deleted (jobs with date < cutoff_date)
         # Only delete jobs that have a valid date (not NULL or empty)
+        # DO NOT delete jobs that have been applied to, saved, interviewed, or rejected
         cursor.execute("""
             SELECT COUNT(*) FROM jobs 
             WHERE date IS NOT NULL AND date != '' AND date < ?
+            AND (applied = 0 OR applied IS NULL)
+            AND (saved = 0 OR saved IS NULL)
+            AND (interview = 0 OR interview IS NULL)
+            AND (rejected = 0 OR rejected IS NULL)
         """, (cutoff_date,))
         
         count = cursor.fetchone()[0]
@@ -282,9 +288,14 @@ def delete_jobs_older_than_date(cutoff_date, config_dict):
             return (0, None)
         
         # Delete jobs older than the cutoff date
+        # DO NOT delete jobs that have been applied to, saved, interviewed, or rejected
         cursor.execute("""
             DELETE FROM jobs 
             WHERE date IS NOT NULL AND date != '' AND date < ?
+            AND (applied = 0 OR applied IS NULL)
+            AND (saved = 0 OR saved IS NULL)
+            AND (interview = 0 OR interview IS NULL)
+            AND (rejected = 0 OR rejected IS NULL)
         """, (cutoff_date,))
         
         conn.commit()

@@ -1038,7 +1038,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 filtersToRestore[type].forEach(function(value) {
                     const optionsContainer = document.getElementById(`${type}-options`);
                     if (optionsContainer) {
-                        const checkboxes = optionsContainer.querySelectorAll('input[type="checkbox"]');
+                        const checkboxes = optionsContainer.querySelectorAll('input[type="checkbox"]:not(#city-select-all)');
                         for (let i = 0; i < checkboxes.length; i++) {
                             const checkboxValue = checkboxes[i].value.replace(/&quot;/g, '"').replace(/&#39;/g, "'");
                             if (checkboxValue === value) {
@@ -1051,6 +1051,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 updateFilterDisplay(type);
             }
         });
+        
+        // Update "Select All" checkbox for city based on current state
+        const cityOptionsContainer = document.getElementById('city-options');
+        if (cityOptionsContainer) {
+            const selectAllCheckbox = document.getElementById('city-select-all');
+            const allCityCheckboxes = cityOptionsContainer.querySelectorAll('input[type="checkbox"]:not(#city-select-all)');
+            if (selectAllCheckbox && allCityCheckboxes.length > 0) {
+                const allChecked = Array.from(allCityCheckboxes).every(cb => cb.checked);
+                selectAllCheckbox.checked = allChecked;
+            }
+        }
         
         // Apply filters after all filters are restored (especially important if hidden filter is active)
         applyAllFilters();
@@ -1220,7 +1231,7 @@ function populateFilters() {
     });
     
     // Populate city filter
-    populateMultiSelect('city', Array.from(cities).sort());
+    populateMultiSelect('city', Array.from(cities).sort(), true); // true = show "Select All" option
     
     // Populate title filter
     populateMultiSelect('title', Array.from(titles).sort());
@@ -1233,10 +1244,32 @@ function populateFilters() {
     populateMultiSelect('country', countryNames);
 }
 
-function populateMultiSelect(type, options) {
+function populateMultiSelect(type, options, showSelectAll = false) {
     const optionsContainer = document.getElementById(`${type}-options`);
     optionsContainer.innerHTML = '';
     
+    // For city filter with "Select All" option
+    if (type === 'city' && showSelectAll) {
+        // Add "Select All" option at the top
+        const selectAllDiv = document.createElement('div');
+        selectAllDiv.className = 'multi-select-option';
+        selectAllDiv.style.fontWeight = 'bold';
+        selectAllDiv.style.borderBottom = '1px solid var(--border-color)';
+        selectAllDiv.style.paddingBottom = '5px';
+        selectAllDiv.style.marginBottom = '5px';
+        const selectAllId = 'city-select-all';
+        
+        // Check if all cities are currently selected
+        const allSelected = options.length > 0 && options.every(option => selectedFilters.city.includes(option));
+        
+        selectAllDiv.innerHTML = `
+            <input type="checkbox" id="${selectAllId}" value="__SELECT_ALL__" onchange="toggleCitySelectAll(event)"${allSelected ? ' checked' : ''}>
+            <label for="${selectAllId}" style="cursor: pointer; flex: 1;" onclick="event.preventDefault(); document.getElementById('${selectAllId}').click();">Select All Cities</label>
+        `;
+        optionsContainer.appendChild(selectAllDiv);
+    }
+    
+    // Original logic for other filter types
     // Separate selected and unselected options
     const selectedOptions = [];
     const unselectedOptions = [];
@@ -1387,6 +1420,44 @@ function reorderDropdownOptions(type) {
     });
 }
 
+function toggleCitySelectAll(event) {
+    if (event) {
+        event.stopPropagation();
+    }
+    
+    const checkbox = document.getElementById('city-select-all');
+    if (!checkbox) return;
+    
+    const shouldSelectAll = checkbox.checked;
+    const optionsContainer = document.getElementById('city-options');
+    if (!optionsContainer) return;
+    
+    const cityCheckboxes = optionsContainer.querySelectorAll('input[type="checkbox"]:not(#city-select-all)');
+    
+    if (shouldSelectAll) {
+        // Check all city checkboxes and add them to selectedFilters
+        selectedFilters.city = [];
+        cityCheckboxes.forEach(function(cb) {
+            cb.checked = true;
+            const decodedValue = cb.value.replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+            if (!selectedFilters.city.includes(decodedValue)) {
+                selectedFilters.city.push(decodedValue);
+            }
+        });
+    } else {
+        // Uncheck all city checkboxes and clear selectedFilters
+        cityCheckboxes.forEach(function(cb) {
+            cb.checked = false;
+        });
+        selectedFilters.city = [];
+    }
+    
+    // Update filter display and apply filters
+    updateFilterDisplay('city');
+    applyAllFilters();
+    saveFiltersToStorage();
+}
+
 function toggleFilter(type, value, event) {
     // Prevent double-firing if called from both onclick and onchange
     if (event) {
@@ -1395,6 +1466,60 @@ function toggleFilter(type, value, event) {
     
     // Decode HTML entities
     const decodedValue = value.replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+    
+    // Special handling for city filter to update "Select All" state
+    if (type === 'city') {
+        const index = selectedFilters.city.indexOf(decodedValue);
+        const wasSelected = index > -1;
+        
+        // Get checkbox to check its current state
+        const optionsContainer = document.getElementById('city-options');
+        let checkbox = null;
+        if (optionsContainer) {
+            const checkboxes = optionsContainer.querySelectorAll('input[type="checkbox"]:not(#city-select-all)');
+            for (let i = 0; i < checkboxes.length; i++) {
+                const checkboxValue = checkboxes[i].value.replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+                if (checkboxValue === decodedValue) {
+                    checkbox = checkboxes[i];
+                    break;
+                }
+            }
+        }
+        
+        if (checkbox) {
+            const isChecked = checkbox.checked;
+            if (isChecked && !wasSelected) {
+                // Checkbox is checked but not in our array - add it
+                selectedFilters.city.push(decodedValue);
+            } else if (!isChecked && wasSelected) {
+                // Checkbox is unchecked but in our array - remove it
+                selectedFilters.city.splice(index, 1);
+            }
+        } else {
+            // No checkbox, use toggle logic
+            if (wasSelected) {
+                selectedFilters.city.splice(index, 1);
+            } else {
+                selectedFilters.city.push(decodedValue);
+            }
+        }
+        
+        // Update "Select All" checkbox state
+        const selectAllCheckbox = document.getElementById('city-select-all');
+        if (selectAllCheckbox && optionsContainer) {
+            const allCityCheckboxes = optionsContainer.querySelectorAll('input[type="checkbox"]:not(#city-select-all)');
+            const allChecked = Array.from(allCityCheckboxes).every(cb => cb.checked);
+            selectAllCheckbox.checked = allChecked;
+        }
+        
+        // Update filter display and apply filters
+        updateFilterDisplay('city');
+        applyAllFilters();
+        saveFiltersToStorage();
+        return;
+    }
+    
+    // Original logic for other filter types
     const index = selectedFilters[type].indexOf(decodedValue);
     const wasSelected = index > -1;
     
@@ -1603,6 +1728,7 @@ function applyAllFilters() {
         }
         
         // Apply city filter (multiple selection) - case insensitive
+        // Always in include mode: show only jobs with cities in the selectedFilters.city array
         if (shouldShow && selectedFilters.city.length > 0) {
             const jobCity = (jobItem.getAttribute('data-city') || '').toLowerCase();
             const selectedCitiesLower = selectedFilters.city.map(c => c.toLowerCase());

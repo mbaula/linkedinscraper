@@ -122,7 +122,8 @@
             </p>
             
             <div class="warning-box" id="warning-box">
-                <strong>⚠️ Warning:</strong> This action cannot be undone! All jobs older than the selected date will be permanently deleted from the database.
+                <strong>⚠️ Warning:</strong> This action cannot be undone! All jobs older than the selected date will be permanently deleted from the database.<br><br>
+                <strong>Protected Jobs:</strong> Jobs that have been applied to, saved, interviewed, or rejected will NOT be deleted, even if they are older than the selected date.
             </div>
             
             <form id="delete-form" onsubmit="event.preventDefault(); deleteOldJobs();">
