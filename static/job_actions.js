@@ -710,6 +710,17 @@ function setupKeyboardNavigation() {
             return;
         }
         
+        if (event.key === 's' || event.key === 'S') {
+            if (!isInputFocused && focusedJobIndex >= 0 && focusedJobIndex < visibleJobItems.length) {
+                event.preventDefault();
+                const jobId = visibleJobItems[focusedJobIndex].getAttribute('data-job-id');
+                if (jobId) {
+                    toggleSaved(parseInt(jobId));
+                }
+            }
+            return;
+        }
+        
         // Keyboard shortcuts (only when not typing)
         if (!isInputFocused) {
             // '/' or '?' - Focus search bar or show help
