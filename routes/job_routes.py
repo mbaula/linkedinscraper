@@ -1,7 +1,7 @@
 """
 Job-related routes blueprint.
 """
-from flask import Blueprint, render_template, jsonify, request, current_app
+from flask import Blueprint, render_template, jsonify, request, current_app, Response
 from services.job_service import (
     get_all_jobs as get_all_jobs_service,
     get_job_by_id,
@@ -9,6 +9,9 @@ from services.job_service import (
     read_jobs_from_db,
     delete_jobs_older_than_date
 )
+import csv
+import io
+from datetime import datetime
 
 # Create blueprint
 job_bp = Blueprint('job', __name__)
@@ -303,5 +306,254 @@ def delete_jobs_older_than():
             "message": f"Permanently deleted {deleted_count} job(s) older than {cutoff_date} from the database",
             "deleted_count": deleted_count
         }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def apply_ui_filters(jobs, filters):
+    """
+    Apply UI filters to jobs list (matching frontend filter logic).
+    
+    Args:
+        jobs (list): List of job dictionaries
+        filters (dict): Filter parameters from UI
+        
+    Returns:
+        list: Filtered list of job dictionaries
+    """
+    filtered_jobs = jobs.copy()
+    
+    # Search filter
+    search_term = filters.get('search', '').strip().lower()
+    if search_term:
+        filtered_jobs = [
+            job for job in filtered_jobs
+            if search_term in (job.get('title', '') or '').lower() or
+               search_term in (job.get('company', '') or '').lower() or
+               search_term in (job.get('location', '') or '').lower()
+        ]
+    
+    # City filter
+    cities = filters.get('cities', [])
+    if cities:
+        cities_lower = [c.lower() for c in cities]
+        filtered_jobs = [
+            job for job in filtered_jobs
+            if (job.get('location') or '').lower() in cities_lower
+        ]
+    
+    # Title filter
+    titles = filters.get('titles', [])
+    if titles:
+        titles_lower = [t.lower() for t in titles]
+        filtered_jobs = [
+            job for job in filtered_jobs
+            if (job.get('title') or '').lower() in titles_lower
+        ]
+    
+    # Company filter
+    companies = filters.get('companies', [])
+    if companies:
+        companies_lower = [c.lower() for c in companies]
+        filtered_jobs = [
+            job for job in filtered_jobs
+            if (job.get('company') or '').lower() in companies_lower
+        ]
+    
+    # Country filter (extract country from location - matching frontend logic)
+    countries = filters.get('countries', [])
+    if countries:
+        countries_lower = [c.lower() for c in countries]
+        
+        def extract_country(location):
+            """Extract country from location string (matching frontend extractCountry function)"""
+            if not location:
+                return ''
+            
+            location_lower = location.lower()
+            
+            # Handle special cases for Canadian cities
+            canadian_cities = ['greater montreal', 'montreal', 'greater vancouver', 'vancouver',
+                             'greater toronto', 'gta', 'ottawa', 'calgary', 'edmonton', 'winnipeg']
+            if any(city in location_lower for city in canadian_cities):
+                return 'canada'
+            
+            parts = [p.strip() for p in location.split(',')]
+            
+            # US state abbreviations
+            us_states = ['al', 'ak', 'az', 'ar', 'ca', 'co', 'ct', 'de', 'fl', 'ga', 
+                        'hi', 'id', 'il', 'in', 'ia', 'ks', 'ky', 'la', 'me', 'md', 
+                        'ma', 'mi', 'mn', 'ms', 'mo', 'mt', 'ne', 'nv', 'nh', 'nj', 
+                        'nm', 'ny', 'nc', 'nd', 'oh', 'ok', 'or', 'pa', 'ri', 'sc', 
+                        'sd', 'tn', 'tx', 'ut', 'vt', 'va', 'wa', 'wv', 'wi', 'wy']
+            
+            for part in parts:
+                if part.upper() in [s.upper() for s in us_states]:
+                    return 'united states'
+            
+            # Canadian provinces
+            canadian_provinces = ['ab', 'bc', 'mb', 'nb', 'nl', 'ns', 'nt', 'nu', 'on', 'pe', 'qc', 'sk', 'yt']
+            canadian_province_names = ['ontario', 'quebec', 'british columbia', 'alberta', 'manitoba', 
+                                      'saskatchewan', 'nova scotia', 'new brunswick', 'newfoundland', 
+                                      'prince edward island', 'northwest territories', 'yukon', 'nunavut']
+            
+            for part in parts:
+                part_upper = part.upper()
+                part_lower = part.lower()
+                if part_upper in canadian_provinces or any(name in part_lower for name in canadian_province_names):
+                    return 'canada'
+            
+            # Check for country names in location parts
+            for part in parts:
+                part_lower = part.lower()
+                for country in countries_lower:
+                    if country in part_lower or part_lower in country:
+                        return country
+                
+                # Common variations
+                if 'united states' in part_lower or 'usa' in part_lower or part_lower in ['us', 'u.s.']:
+                    return 'united states'
+                if 'united kingdom' in part_lower or part_lower in ['uk', 'u.k.', 'great britain']:
+                    return 'united kingdom'
+            
+            return ''
+        
+        filtered_jobs = [
+            job for job in filtered_jobs
+            if extract_country(job.get('location', '')).lower() in countries_lower
+        ]
+    
+    # Status filters (AND logic - job must have ALL selected statuses)
+    statuses = filters.get('statuses', [])
+    if statuses:
+        def job_matches_all_statuses(job):
+            for status in statuses:
+                if status == 'saved' and job.get('saved') != 1:
+                    return False
+                elif status == 'applied' and job.get('applied') != 1:
+                    return False
+                elif status == 'interview' and job.get('interview') != 1:
+                    return False
+                elif status == 'rejected' and job.get('rejected') != 1:
+                    return False
+                elif status == 'hidden' and job.get('hidden') != 1:
+                    return False
+            return True
+        
+        filtered_jobs = [job for job in filtered_jobs if job_matches_all_statuses(job)]
+    
+    # Date filter
+    date_filter = filters.get('date', '')
+    if date_filter:
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        
+        def is_date_in_range(job_date_str, range_type):
+            if not job_date_str:
+                return True
+            try:
+                # Try to parse the date (format: YYYY-MM-DD)
+                job_date = datetime.strptime(job_date_str.split('T')[0], '%Y-%m-%d')
+                days_diff = (now - job_date).days
+                
+                if range_type == '24h':
+                    return days_diff <= 1
+                elif range_type == '3d':
+                    return days_diff <= 3
+                elif range_type == '1w':
+                    return days_diff <= 7
+                elif range_type == '2w':
+                    return days_diff <= 14
+                elif range_type == '1m':
+                    return days_diff <= 30
+                return True
+            except:
+                return True
+        
+        filtered_jobs = [
+            job for job in filtered_jobs
+            if is_date_in_range(job.get('date'), date_filter)
+        ]
+    
+    # Sort
+    sort_by = filters.get('sort', 'date-desc')
+    if sort_by == 'date-desc':
+        filtered_jobs.sort(key=lambda x: x.get('id', 0), reverse=True)
+    elif sort_by == 'date-asc':
+        filtered_jobs.sort(key=lambda x: x.get('id', 0))
+    elif sort_by == 'title-asc':
+        filtered_jobs.sort(key=lambda x: (x.get('title') or '').lower())
+    elif sort_by == 'title-desc':
+        filtered_jobs.sort(key=lambda x: (x.get('title') or '').lower(), reverse=True)
+    elif sort_by == 'company-asc':
+        filtered_jobs.sort(key=lambda x: (x.get('company') or '').lower())
+    elif sort_by == 'company-desc':
+        filtered_jobs.sort(key=lambda x: (x.get('company') or '').lower(), reverse=True)
+    elif sort_by == 'city-asc':
+        filtered_jobs.sort(key=lambda x: (x.get('location') or '').lower())
+    elif sort_by == 'city-desc':
+        filtered_jobs.sort(key=lambda x: (x.get('location') or '').lower(), reverse=True)
+    
+    return filtered_jobs
+
+
+@job_bp.route('/api/jobs/export_csv', methods=['POST'])
+def export_jobs_csv():
+    """Export filtered jobs to CSV"""
+    config = current_app.config['CONFIG']
+    
+    try:
+        data = request.get_json()
+        filters = data.get('filters', {})
+        include_hidden = filters.get('include_hidden', False)
+        
+        # Get all jobs from database
+        if include_hidden:
+            jobs = read_jobs_from_db(include_hidden=True)
+        else:
+            jobs = get_all_jobs_service(config)
+        
+        # Apply UI filters
+        filtered_jobs = apply_ui_filters(jobs, filters)
+        
+        # Create CSV in memory
+        output = io.StringIO()
+        
+        # Define CSV columns
+        fieldnames = [
+            'id', 'title', 'company', 'location', 'date', 'job_url',
+            'applied', 'saved', 'interview', 'rejected', 'hidden',
+            'job_description'
+        ]
+        
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+        writer.writeheader()
+        
+        for job in filtered_jobs:
+            # Clean up the row data
+            row = {}
+            for field in fieldnames:
+                value = job.get(field, '')
+                # Convert boolean/integer fields
+                if field in ['applied', 'saved', 'interview', 'rejected', 'hidden']:
+                    row[field] = 'Yes' if value == 1 else 'No'
+                else:
+                    row[field] = str(value) if value is not None else ''
+            writer.writerow(row)
+        
+        # Prepare response
+        output.seek(0)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'jobs_export_{timestamp}.csv'
+        
+        return Response(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={
+                'Content-Disposition': f'attachment; filename={filename}',
+                'Content-Type': 'text/csv; charset=utf-8'
+            }
+        )
+        
     except Exception as e:
         return jsonify({"error": str(e)}), 500

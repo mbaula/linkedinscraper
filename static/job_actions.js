@@ -3515,3 +3515,122 @@ function checkJobVisibilityWithFilters(jobItem, newSavedStatus) {
     // No status matches, but we'll keep it visible anyway to avoid confusion
     return true;
 }
+
+// Export filtered jobs to CSV
+async function exportJobsToCSV() {
+    const exportBtn = document.getElementById('export-csv-btn');
+    const originalText = exportBtn.innerHTML;
+    
+    // Disable button and show loading state
+    exportBtn.disabled = true;
+    exportBtn.innerHTML = '⏳ Exporting...';
+    exportBtn.style.opacity = '0.6';
+    
+    try {
+        // Collect current filter state
+        const searchTerm = document.getElementById('search-bar') ? document.getElementById('search-bar').value : '';
+        const sortBy = document.getElementById('sort-by') ? document.getElementById('sort-by').value : '';
+        const dateFilter = document.getElementById('filter-date') ? document.getElementById('filter-date').value : '';
+        
+        // Check if hidden jobs are included
+        const urlParams = new URLSearchParams(window.location.search);
+        const includeHidden = urlParams.get('include_hidden') === 'true';
+        
+        // Prepare filters object
+        const filters = {
+            search: searchTerm,
+            cities: selectedFilters.city,
+            titles: selectedFilters.title,
+            companies: selectedFilters.company,
+            countries: selectedFilters.country,
+            statuses: selectedFilters.status,
+            date: dateFilter,
+            sort: sortBy,
+            include_hidden: includeHidden
+        };
+        
+        // Send request to backend
+        const response = await fetch('/api/jobs/export_csv', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ filters: filters })
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to export jobs');
+        }
+        
+        // Get the CSV blob
+        const blob = await response.blob();
+        
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        
+        // Get filename from Content-Disposition header or use default
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'jobs_export.csv';
+        if (contentDisposition) {
+            const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
+            if (filenameMatch) {
+                filename = filenameMatch[1];
+            }
+        }
+        
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        
+        // Show success message
+        showExportMessage('Jobs exported successfully!', 'success');
+        
+    } catch (error) {
+        console.error('Export error:', error);
+        showExportMessage('Error exporting jobs: ' + error.message, 'error');
+    } finally {
+        // Restore button state
+        exportBtn.disabled = false;
+        exportBtn.innerHTML = originalText;
+        exportBtn.style.opacity = '1';
+    }
+}
+
+function showExportMessage(message, type) {
+    // Remove existing message if any
+    const existingMsg = document.getElementById('export-message');
+    if (existingMsg) {
+        existingMsg.remove();
+    }
+    
+    // Create message element
+    const msgDiv = document.createElement('div');
+    msgDiv.id = 'export-message';
+    msgDiv.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 15px 20px;
+        border-radius: 5px;
+        z-index: 10000;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        font-weight: bold;
+        ${type === 'success' 
+            ? 'background-color: #4CAF50; color: white;' 
+            : 'background-color: #f44336; color: white;'}
+    `;
+    msgDiv.textContent = message;
+    document.body.appendChild(msgDiv);
+    
+    // Remove message after 3 seconds
+    setTimeout(() => {
+        if (msgDiv.parentNode) {
+            msgDiv.parentNode.removeChild(msgDiv);
+        }
+    }, 3000);
+}
