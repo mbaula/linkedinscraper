@@ -710,19 +710,44 @@ function setupKeyboardNavigation() {
             return;
         }
         
-        if (event.key === 's' || event.key === 'S') {
-            if (!isInputFocused && focusedJobIndex >= 0 && focusedJobIndex < visibleJobItems.length) {
-                event.preventDefault();
-                const jobId = visibleJobItems[focusedJobIndex].getAttribute('data-job-id');
-                if (jobId) {
-                    toggleSaved(parseInt(jobId));
-                }
-            }
-            return;
-        }
-        
         // Keyboard shortcuts (only when not typing)
         if (!isInputFocused) {
+            // 's' - Save/unsave job
+            if (event.key === 's' || event.key === 'S') {
+                if (focusedJobIndex >= 0 && focusedJobIndex < visibleJobItems.length) {
+                    event.preventDefault();
+                    const jobId = visibleJobItems[focusedJobIndex].getAttribute('data-job-id');
+                    if (jobId) {
+                        toggleSaved(parseInt(jobId));
+                    }
+                }
+                return;
+            }
+            
+            // 'a' - Mark/unmark as applied
+            if (event.key === 'a' || event.key === 'A') {
+                if (focusedJobIndex >= 0 && focusedJobIndex < visibleJobItems.length) {
+                    event.preventDefault();
+                    const jobId = visibleJobItems[focusedJobIndex].getAttribute('data-job-id');
+                    if (jobId) {
+                        toggleApplied(parseInt(jobId));
+                    }
+                }
+                return;
+            }
+            
+            // 'h' - Hide/unhide job
+            if (event.key === 'h' || event.key === 'H') {
+                if (focusedJobIndex >= 0 && focusedJobIndex < visibleJobItems.length) {
+                    event.preventDefault();
+                    const jobId = visibleJobItems[focusedJobIndex].getAttribute('data-job-id');
+                    if (jobId) {
+                        toggleHide(parseInt(jobId));
+                    }
+                }
+                return;
+            }
+            
             // '/' or '?' - Focus search bar or show help
             if ((event.key === '/' || event.key === '?') && !event.ctrlKey && !event.metaKey && !event.altKey) {
                 event.preventDefault();
@@ -2138,7 +2163,14 @@ function updateJobDetails(job) {
     var coverLetterDiv = document.getElementById('bottom-pane'); // Get the cover letter div
     console.log('Updating job details: ' + job.id); // Log the jobId here
     
-    jobDetailsDiv.innerHTML = AnalysisTemplates.formatJobDetails(job);
+    if (!jobDetailsDiv) return;
+    
+    if (typeof AnalysisTemplates !== 'undefined' && AnalysisTemplates) {
+        jobDetailsDiv.innerHTML = AnalysisTemplates.formatJobDetails(job);
+    } else {
+        // Fallback if AnalysisTemplates is not available
+        jobDetailsDiv.innerHTML = '<h3>' + (job.title || 'Job Details') + '</h3><p>' + (job.company || '') + '</p>';
+    }
     
     // Update current job ID for cover letter generation
     currentCoverLetterJobId = job.id;
@@ -2555,6 +2587,17 @@ function markAsRejected(jobId) {
     toggleRejected(jobId);
 }
 
+function toggleHide(jobId) {
+    var jobCard = document.querySelector(`.job-item[data-job-id="${jobId}"]`);
+    var isHidden = jobCard && jobCard.getAttribute('data-hidden') === '1';
+    
+    if (isHidden) {
+        unhideJob(jobId);
+    } else {
+        hideJob(jobId);
+    }
+}
+
 function hideJob(jobId) {
     fetch('/hide_job/' + jobId, { method: 'POST' })
         .then(response => response.json())
@@ -2841,23 +2884,42 @@ function updatePipelineStatus(step, status, message) {
 }
 
 function formatJobJSON(job) {
-    return AnalysisTemplates.formatJobJSON(job);
+    if (typeof AnalysisTemplates !== 'undefined' && AnalysisTemplates) {
+        return AnalysisTemplates.formatJobJSON(job);
+    }
+    return JSON.stringify(job, null, 2);
 }
 
 function formatResumeJSON(resume) {
-    return AnalysisTemplates.formatResumeJSON(resume);
+    if (typeof AnalysisTemplates !== 'undefined' && AnalysisTemplates) {
+        return AnalysisTemplates.formatResumeJSON(resume);
+    }
+    return JSON.stringify(resume, null, 2);
 }
 
 function formatMatchAnalysis(analysis) {
-    return AnalysisTemplates.formatMatchAnalysis(analysis);
+    if (typeof AnalysisTemplates !== 'undefined' && AnalysisTemplates) {
+        return AnalysisTemplates.formatMatchAnalysis(analysis);
+    }
+    return JSON.stringify(analysis, null, 2);
 }
 
 function formatResumeImprovement(text) {
-    return AnalysisTemplates.formatResumeImprovement(text);
+    if (typeof AnalysisTemplates !== 'undefined' && AnalysisTemplates) {
+        return AnalysisTemplates.formatResumeImprovement(text);
+    }
+    return text;
 }
 
 function escapeHtml(text) {
-    return AnalysisTemplates.escapeHtml(text);
+    if (typeof AnalysisTemplates !== 'undefined' && AnalysisTemplates) {
+        return AnalysisTemplates.escapeHtml(text);
+    }
+    // Fallback escapeHtml
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 function showPipelineResult(step, data) {
@@ -2885,7 +2947,11 @@ function showPipelineResult(step, data) {
                     formattedHtml = formatMatchAnalysis(data);
                     break;
                 case 4:
-                    formattedHtml = AnalysisTemplates.formatImprovements(data);
+                    if (typeof AnalysisTemplates !== 'undefined' && AnalysisTemplates && AnalysisTemplates.formatImprovements) {
+                        formattedHtml = AnalysisTemplates.formatImprovements(data);
+                    } else {
+                        formattedHtml = '<pre>' + escapeHtml(JSON.stringify(data, null, 2)) + '</pre>';
+                    }
                     break;
                 default:
                     // Fallback to JSON for unknown steps
@@ -2939,7 +3005,9 @@ async function openAnalysisModal(jobId) {
             resumeOptions = '<option value="">Select a resume...</option>';
             resumeData.resumes.forEach(function(resume) {
                 const isSelected = resume.path === defaultResumePath;
-                resumeOptions += `<option value="${AnalysisTemplates.escapeHtml(resume.path)}"${isSelected ? ' selected' : ''}>${AnalysisTemplates.escapeHtml(resume.name)}</option>`;
+                const escapedPath = escapeHtml(resume.path);
+                const escapedName = escapeHtml(resume.name);
+                resumeOptions += `<option value="${escapedPath}"${isSelected ? ' selected' : ''}>${escapedName}</option>`;
             });
         } else {
             resumeOptions = '<option value="">No PDF files found in root folder</option>';
@@ -2960,7 +3028,11 @@ async function openAnalysisModal(jobId) {
             
             modelOptions = '';
             modelData.models.forEach(function(model) {
-                modelOptions += AnalysisTemplates.getModelOption(model, model === defaultModel);
+                if (typeof AnalysisTemplates !== 'undefined' && AnalysisTemplates && AnalysisTemplates.getModelOption) {
+                    modelOptions += AnalysisTemplates.getModelOption(model, model === defaultModel);
+                } else {
+                    modelOptions += `<option value="${escapeHtml(model)}"${model === defaultModel ? ' selected' : ''}>${escapeHtml(model)}</option>`;
+                }
             });
         } else {
             modelOptions = '<option value="">No models available</option>';
@@ -2971,6 +3043,16 @@ async function openAnalysisModal(jobId) {
     }
     
     // Build pipeline UI using templates
+    if (typeof AnalysisTemplates === 'undefined' || !AnalysisTemplates || !AnalysisTemplates.getModalContent) {
+        console.error('AnalysisTemplates is not available. Please ensure analysis_templates.js is loaded.');
+        if (modalContent) {
+            modalContent.innerHTML = '<p>Error: Analysis templates not loaded. Please refresh the page.</p>';
+        }
+        if (modal) {
+            modal.style.display = 'block';
+        }
+        return;
+    }
     let html = AnalysisTemplates.getModalContent();
     
     // Inject resume and model options (replace the empty select tags)
@@ -3024,6 +3106,16 @@ function closeAnalysisModal() {
 async function openAnalysisHistory(jobId) {
     const modal = document.getElementById('analysis-history-modal');
     const modalContent = document.getElementById('analysis-history-content');
+    
+    if (typeof AnalysisTemplates === 'undefined' || !AnalysisTemplates) {
+        if (modalContent) {
+            modalContent.innerHTML = '<p>Error: Analysis templates not loaded. Please ensure analysis_templates.js is loaded.</p>';
+        }
+        if (modal) {
+            modal.style.display = 'block';
+        }
+        return;
+    }
     
     try {
         // Fetch analysis history from backend
