@@ -311,6 +311,40 @@
         </div>
         
         <div id="status-message" class="status-message"></div>
+
+            <div class="section">
+                <h2>Saved configuration files</h2>
+                <p style="color: var(--text-secondary); margin-top: 0;">
+                    Keep multiple JSON configs under <code>configs/</code>. The active file is used by the app and by <strong>Execute Search</strong>.
+                    A small <code>active_config.txt</code> in the project root remembers which file is active.
+                </p>
+                <div class="form-group">
+                    <label>Currently active</label>
+                    <div id="active-config-label" style="padding: 10px; background: var(--bg-primary); border-radius: 5px; font-family: monospace; font-size: 13px;">—</div>
+                </div>
+                <div class="form-group">
+                    <label for="profile-select">Profiles</label>
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+                        <select id="profile-select" style="flex: 1; min-width: 220px;"></select>
+                        <button type="button" class="btn btn-secondary" onclick="refreshProfiles()">Refresh list</button>
+                        <button type="button" class="btn btn-primary" onclick="activateSelectedProfile()">Load selected</button>
+                        <button type="button" class="btn btn-danger" onclick="deleteSelectedProfile()">Delete selected</button>
+                    </div>
+                    <small style="color: var(--text-tertiary); display: block; margin-top: 8px;">
+                        Load selected switches the active file and reloads this form. Delete only removes files under <code>configs/</code> (not root <code>config.json</code>).
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="new-profile-name">Save current form as new profile</label>
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+                        <input type="text" id="new-profile-name" placeholder="e.g. remote-python" style="flex: 1; min-width: 200px; max-width: 360px;">
+                        <button type="button" class="btn btn-success" onclick="saveAsNewProfile()">Save as new profile</button>
+                    </div>
+                    <small style="color: var(--text-tertiary); display: block; margin-top: 8px;">
+                        Name: letters, numbers, underscore, hyphen only (max 64 chars). Saves what you have in the form (you do not need to press Save Configuration first).
+                    </small>
+                </div>
+            </div>
         
         <form id="config-form">
             <!-- Recent Searches Section (Optional - can be collapsed) -->
@@ -618,10 +652,155 @@
                 .then(data => {
                     configData = data;
                     populateForm(data);
+                    refreshProfiles();
                 })
                 .catch(error => {
                     showMessage('Error loading configuration: ' + error, 'error');
                 });
+        }
+
+        function refreshProfiles() {
+            return fetch('/api/config/active')
+                .then(r => r.json())
+                .then(info => {
+                    if (info.error) {
+                        showMessage(info.error, 'error');
+                        return;
+                    }
+                    const label = document.getElementById('active-config-label');
+                    if (label) {
+                        label.textContent = info.active_relative_path + '  →  ' + info.active_absolute_path;
+                    }
+                    const sel = document.getElementById('profile-select');
+                    if (!sel) return;
+                    sel.innerHTML = '';
+                    (info.profiles || []).forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p.relative_path;
+                        opt.textContent = p.name + (p.active ? ' (active)' : '');
+                        if (p.active) opt.selected = true;
+                        sel.appendChild(opt);
+                    });
+                })
+                .catch(e => console.warn('Profiles list:', e));
+        }
+
+        function activateSelectedProfile() {
+            const sel = document.getElementById('profile-select');
+            const rel = sel && sel.value;
+            if (!rel) {
+                showMessage('No profile selected', 'error');
+                return;
+            }
+            fetch('/api/config/profiles/activate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ relative_path: rel })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        showMessage(data.error, 'error');
+                        return;
+                    }
+                    showMessage(data.message || 'Profile activated', 'success');
+                    loadConfig();
+                })
+                .catch(e => showMessage('Activate failed: ' + e, 'error'));
+        }
+
+        function saveAsNewProfile() {
+            const nameInput = document.getElementById('new-profile-name');
+            const name = nameInput && nameInput.value.trim();
+            if (!name) {
+                showMessage('Enter a profile name', 'error');
+                return;
+            }
+            const config = collectConfigFromForm();
+            fetch('/api/config/profiles', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name, config: config })
+            })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        showMessage(data.error, 'error');
+                        return;
+                    }
+                    showMessage(data.message || 'Profile saved', 'success');
+                    nameInput.value = '';
+                    refreshProfiles();
+                })
+                .catch(e => showMessage('Save profile failed: ' + e, 'error'));
+        }
+
+        function deleteSelectedProfile() {
+            const sel = document.getElementById('profile-select');
+            const rel = sel && sel.value;
+            if (!rel || rel === 'config.json') {
+                showMessage('Select a configs/ profile to delete (not root config.json).', 'error');
+                return;
+            }
+            const m = rel.match(/^configs\/(.+)\.json$/i);
+            if (!m) {
+                showMessage('Only profiles under configs/ can be deleted here.', 'error');
+                return;
+            }
+            const slug = m[1];
+            if (!confirm('Delete profile "' + slug + '"? This cannot be undone.')) return;
+            fetch('/api/config/profiles/' + encodeURIComponent(slug), { method: 'DELETE' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        showMessage(data.error, 'error');
+                        return;
+                    }
+                    showMessage(data.message || 'Deleted', 'success');
+                    refreshProfiles();
+                    loadConfig();
+                })
+                .catch(e => showMessage('Delete failed: ' + e, 'error'));
+        }
+
+        function collectConfigFromForm() {
+            const queryItems = document.querySelectorAll('.array-item');
+            const searchQueries = Array.from(queryItems).map(item => ({
+                keywords: item.querySelector('.query-keywords').value,
+                location: item.querySelector('.query-location').value,
+                f_WT: item.querySelector('.query-f_wt').value
+            }));
+
+            const descWords = document.getElementById('desc_words').value
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0);
+
+            const config = {
+                ...configData,
+                search_queries: searchQueries,
+                desc_words: descWords,
+                title_exclude: getTagsFromContainer('title-exclude-tags'),
+                title_include: getTagsFromContainer('title-include-tags'),
+                company_exclude: getTagsFromContainer('company-exclude-tags'),
+                languages: document.getElementById('languages').value.split(',').map(l => l.trim()).filter(l => l),
+                pages_to_scrape: parseInt(document.getElementById('pages_to_scrape').value),
+                rounds: parseInt(document.getElementById('rounds').value),
+                days_to_scrape: parseInt(document.getElementById('days_to_scrape').value),
+                timespan: document.getElementById('timespan').value,
+                delete_unapplied_jobs_after_days: parseInt(document.getElementById('delete_unapplied_jobs_after_days').value) || 0,
+                resume_path: document.getElementById('default_resume').value || '',
+                cover_letter_provider: document.getElementById('cover_letter_provider').value,
+                ollama_base_url: document.getElementById('ollama_base_url').value,
+                ollama_model: document.getElementById('ollama_model').value,
+                groq_api_key: document.getElementById('groq_api_key').value
+            };
+
+            if (config.cover_letter_provider === 'openai') {
+                config.OpenAI_API_KEY = document.getElementById('openai_api_key_cover').value;
+                config.OpenAI_Model = document.getElementById('openai_model_cover').value;
+            }
+            return config;
         }
 
         function populateForm(config) {
@@ -747,45 +926,7 @@
         }
 
         function saveConfig() {
-            // Collect search queries
-            const queryItems = document.querySelectorAll('.array-item');
-            const searchQueries = Array.from(queryItems).map(item => ({
-                keywords: item.querySelector('.query-keywords').value,
-                location: item.querySelector('.query-location').value,
-                f_WT: item.querySelector('.query-f_wt').value
-            }));
-
-            // Collect other config values
-            const descWords = document.getElementById('desc_words').value
-                .split('\n')
-                .map(line => line.trim())
-                .filter(line => line.length > 0);
-
-            const config = {
-                ...configData, // Preserve existing config like proxies, headers, etc.
-                search_queries: searchQueries,
-                desc_words: descWords,
-                title_exclude: getTagsFromContainer('title-exclude-tags'),
-                title_include: getTagsFromContainer('title-include-tags'),
-                company_exclude: getTagsFromContainer('company-exclude-tags'),
-                languages: document.getElementById('languages').value.split(',').map(l => l.trim()).filter(l => l),
-                pages_to_scrape: parseInt(document.getElementById('pages_to_scrape').value),
-                rounds: parseInt(document.getElementById('rounds').value),
-                days_to_scrape: parseInt(document.getElementById('days_to_scrape').value),
-                timespan: document.getElementById('timespan').value,
-                delete_unapplied_jobs_after_days: parseInt(document.getElementById('delete_unapplied_jobs_after_days').value) || 0,
-                resume_path: document.getElementById('default_resume').value || '',
-                cover_letter_provider: document.getElementById('cover_letter_provider').value,
-                ollama_base_url: document.getElementById('ollama_base_url').value,
-                ollama_model: document.getElementById('ollama_model').value,
-                groq_api_key: document.getElementById('groq_api_key').value
-            };
-            
-            // Only update OpenAI settings if using OpenAI provider
-            if (config.cover_letter_provider === 'openai') {
-                config.OpenAI_API_KEY = document.getElementById('openai_api_key_cover').value;
-                config.OpenAI_Model = document.getElementById('openai_model_cover').value;
-            }
+            const config = collectConfigFromForm();
 
             return fetch('/api/config', {
                 method: 'POST',

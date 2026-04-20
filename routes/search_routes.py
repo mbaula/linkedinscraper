@@ -9,6 +9,7 @@ import threading
 from datetime import datetime
 import routes.shared_state as shared_state
 from services.search_history_service import save_search_history
+from utils.config_utils import get_active_config_path
 
 # Create blueprint
 search_bp = Blueprint('search', __name__)
@@ -39,8 +40,13 @@ def execute_search():
             
             # Run the main.py script with real-time output capture
             # Use -u flag for unbuffered Python output
+            active_cfg = get_active_config_path()
+            try:
+                cfg_arg = os.path.relpath(active_cfg, os.getcwd())
+            except ValueError:
+                cfg_arg = active_cfg
             shared_state.search_process = subprocess.Popen(
-                [sys.executable, '-u', 'main.py', 'config.json'],
+                [sys.executable, '-u', 'main.py', cfg_arg],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,

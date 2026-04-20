@@ -5,7 +5,7 @@ import sqlite3
 from utils.config_utils import load_config
 
 
-def get_db_connection(config_path='config.json', config_dict=None):
+def get_db_connection(config_path=None, config_dict=None):
     """
     Get a database connection using the configuration.
     
@@ -17,7 +17,10 @@ def get_db_connection(config_path='config.json', config_dict=None):
         sqlite3.Connection: Database connection object
     """
     if config_dict is None:
-        config = load_config(config_path)
+        from utils.config_utils import get_active_config_path
+
+        path = config_path or get_active_config_path()
+        config = load_config(path)
     else:
         config = config_dict
     

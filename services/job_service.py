@@ -214,19 +214,21 @@ def filter_jobs_by_config(jobs_list, config):
     return filtered_jobs
 
 
-def read_jobs_from_db(config_path='config.json', include_hidden=False):
+def read_jobs_from_db(config_path=None, include_hidden=False):
     """
     Read jobs from database with filtering applied.
     
     Args:
-        config_path (str): Path to configuration file
+        config_path (str | None): Path to configuration file; None uses the active config file.
         include_hidden (bool): If True, include hidden jobs in results
         
     Returns:
         list: List of filtered job dictionaries
     """
-    # Reload config to get latest filter settings
-    current_config = load_config(config_path)
+    from utils.config_utils import get_active_config_path
+
+    path = config_path or get_active_config_path()
+    current_config = load_config(path)
     
     conn = get_db_connection(config_dict=current_config)
     try:

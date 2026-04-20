@@ -1,0 +1,144 @@
+{
+    "OpenAI_API_KEY": "",
+    "OpenAI_Model": "",
+    "app_table": "jobs",
+    "company_exclude": [
+        "Taskify",
+        "jerry",
+        "turing",
+        "mercor",
+        "data annotation",
+        "dataannotation",
+        "lensa",
+        "remotehunter",
+        "Crossover",
+        "lumenalta"
+    ],
+    "cover_letter_provider": "ollama",
+    "days_to_scrape": 14,
+    "db_path": "./data/my_database.db",
+    "delete_unapplied_jobs_after_days": 0,
+    "desc_words": [],
+    "filtered_jobs_tablename": "filtered_jobs",
+    "groq_api_key": "",
+    "headers": {},
+    "jobs_tablename": "jobs",
+    "languages": [
+        "en"
+    ],
+    "ollama_base_url": "http://localhost:11434",
+    "ollama_extraction_model": "gpt-oss:latest",
+    "ollama_model": "gpt-oss:latest",
+    "pages_to_scrape": 14,
+    "proxies": {},
+    "resume_path": "C:\\Users\\markb\\Documents\\Projects\\linkedinscraper\\Mark_Baula_New_Grad_General.pdf",
+    "rounds": 1,
+    "search_queries": [
+        {
+            "keywords": "Software Engineer",
+            "location": "Ontario, Canada",
+            "f_WT": ""
+        },
+        {
+            "keywords": "Developer",
+            "location": "Ontario, Canada",
+            "f_WT": ""
+        },
+        {
+            "keywords": "DevOps",
+            "location": "Ontario, Canada",
+            "f_WT": ""
+        },
+        {
+            "keywords": "SDE",
+            "location": "Ontario, Canada",
+            "f_WT": ""
+        },
+        {
+            "keywords": "SWE",
+            "location": "Ontario, Canada",
+            "f_WT": ""
+        },
+        {
+            "keywords": "Software",
+            "location": "Ontario, Canada",
+            "f_WT": ""
+        },
+        {
+            "keywords": "Data",
+            "location": "Ontario, Canada",
+            "f_WT": ""
+        },
+        {
+            "keywords": "Software",
+            "location": "Canada",
+            "f_WT": ""
+        },
+        {
+            "keywords": "Full Stack",
+            "location": "Canada",
+            "f_WT": ""
+        },
+        {
+            "keywords": "Software",
+            "location": "United States",
+            "f_WT": ""
+        }
+    ],
+    "timespan": "r84600",
+    "title_exclude": [
+        "intern",
+        "internship",
+        "co-op",
+        "coop",
+        "co op",
+        "senior",
+        "staff",
+        "principal",
+        "lead",
+        "architect",
+        "manager",
+        "director",
+        "vp",
+        "vice president",
+        "sr",
+        "sr.",
+        "iii",
+        "sales",
+        "designer",
+        "lead",
+        "staff",
+        "principal",
+        "senior"
+    ],
+    "title_include": [
+        "Software Engineer",
+        "Software Developer",
+        "DevOps Engineer",
+        "Full Stack Developer",
+        "Full Stack Engineer",
+        "Backend Engineer",
+        "Backend Developer",
+        "SDE",
+        "SWE",
+        "Software Development Engineer",
+        "Python Developer",
+        "JavaScript Developer",
+        "React Developer",
+        "Full Stack",
+        "Backend",
+        "DevOps",
+        "Software",
+        "Data",
+        "Fullstack",
+        "Full-Stack",
+        "Full Stack",
+        "junior",
+        "jr.",
+        "jr",
+        "Software Engineer I",
+        "Software Developer I",
+        "Junior Full Stack",
+        "Developer"
+    ]
+}

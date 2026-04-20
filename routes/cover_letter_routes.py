@@ -332,14 +332,15 @@ def get_CoverLetter(job_id):
     # Save selected model to config if provided (for Ollama)
     if selected_model and provider == "ollama":
         try:
-            from utils.config_utils import load_config
-            with open('config.json', 'r', encoding='utf-8') as f:
+            from utils.config_utils import load_config, get_active_config_path
+            cfg_path = get_active_config_path()
+            with open(cfg_path, 'r', encoding='utf-8') as f:
                 current_config = json.load(f)
             current_config['ollama_model'] = selected_model
-            with open('config.json', 'w', encoding='utf-8') as f:
-                json.dump(current_config, f, indent=4)
-            # Reload config in app context
-            current_app.config['CONFIG'] = load_config('config.json')
+            with open(cfg_path, 'w', encoding='utf-8') as f:
+                json.dump(current_config, f, indent=4, ensure_ascii=False)
+            current_app.config['CONFIG_PATH'] = cfg_path
+            current_app.config['CONFIG'] = load_config(cfg_path)
             config = current_app.config['CONFIG']
             print(f"Saved Ollama model to config: {selected_model}")
         except Exception as e:

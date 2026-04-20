@@ -3,7 +3,18 @@ Configuration routes blueprint.
 """
 from flask import Blueprint, render_template, jsonify, request, current_app
 import json
+import os
 import sqlite3
+
+from utils.config_utils import (
+    load_config,
+    get_active_config_path,
+    get_active_config_relative_path,
+    set_active_config_relative_path,
+    list_config_profiles,
+    save_profile_json,
+    delete_profile_json,
+)
 from services.search_history_service import (
     save_search_history,
     get_search_history,
@@ -22,11 +33,16 @@ def search_config():
     return render_template('search_config.html')
 
 
+def _config_file_path():
+    return current_app.config.get("CONFIG_PATH") or get_active_config_path()
+
+
 @config_bp.route('/api/config', methods=['GET'])
 def get_config():
     """Get current configuration"""
     try:
-        with open('config.json', 'r', encoding='utf-8') as f:
+        path = _config_file_path()
+        with open(path, 'r', encoding='utf-8') as f:
             config = json.load(f)
         return jsonify(config)
     except Exception as e:
@@ -35,15 +51,107 @@ def get_config():
 
 @config_bp.route('/api/config', methods=['POST'])
 def update_config():
-    """Update configuration"""
+    """Update configuration (writes the active config file)."""
     try:
         new_config = request.json
-        with open('config.json', 'w', encoding='utf-8') as f:
+        path = _config_file_path()
+        with open(path, 'w', encoding='utf-8') as f:
             json.dump(new_config, f, indent=4, ensure_ascii=False)
-        # Reload config in app context
-        from utils.config_utils import load_config
-        current_app.config['CONFIG'] = load_config('config.json')
+        current_app.config['CONFIG_PATH'] = os.path.abspath(path)
+        current_app.config['CONFIG'] = load_config(path)
         return jsonify({"success": True, "message": "Configuration updated successfully"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@config_bp.route('/api/config/active', methods=['GET'])
+def get_active_config_info():
+    """Active config file path and saved profiles list."""
+    try:
+        rel = get_active_config_relative_path()
+        path = get_active_config_path()
+        return jsonify(
+            {
+                "active_relative_path": rel.replace("\\", "/"),
+                "active_absolute_path": os.path.abspath(path),
+                "profiles": list_config_profiles(),
+            }
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@config_bp.route('/api/config/profiles', methods=['POST'])
+def save_config_profile():
+    """
+    Save the current in-memory CONFIG (or body.config) as configs/{name}.json.
+    JSON body: { "name": "my-profile", "config": { ... optional full dict ... } }
+    """
+    try:
+        data = request.json or {}
+        name = data.get("name")
+        if not name:
+            return jsonify({"error": "name is required"}), 400
+        cfg = data.get("config")
+        if cfg is None:
+            cfg = current_app.config.get("CONFIG")
+        if not isinstance(cfg, dict):
+            return jsonify({"error": "No configuration to save"}), 400
+        rel = save_profile_json(name, cfg)
+        return jsonify({"success": True, "relative_path": rel, "message": f"Saved profile as {rel}"})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@config_bp.route('/api/config/profiles/activate', methods=['POST'])
+def activate_config_profile():
+    """Switch active config file. Body: { \"relative_path\": \"configs/foo.json\" } or { \"name\": \"foo\" }."""
+    try:
+        data = request.json or {}
+        rel = data.get("relative_path")
+        if not rel and data.get("name"):
+            rel = f"configs/{data['name'].strip()}.json".replace("\\", "/")
+        if not rel:
+            return jsonify({"error": "relative_path or name is required"}), 400
+        rel = rel.strip().replace("\\", "/")
+        set_active_config_relative_path(rel)
+        path = get_active_config_path()
+        current_app.config["CONFIG_PATH"] = os.path.abspath(path)
+        current_app.config["CONFIG"] = load_config(path)
+        return jsonify(
+            {
+                "success": True,
+                "active_relative_path": rel,
+                "message": f"Active configuration is now {rel}",
+            }
+        )
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@config_bp.route('/api/config/profiles/<string:name>', methods=['DELETE'])
+def delete_config_profile(name):
+    """Delete configs/{name}.json (cannot delete root config.json)."""
+    try:
+        if name in ("config.json", "config", "config.json (root)"):
+            return jsonify({"error": "Cannot delete root config.json via this endpoint"}), 400
+        removed = delete_profile_json(name)
+        if not removed:
+            return jsonify({"error": "Profile not found"}), 404
+        if get_active_config_relative_path() == f"configs/{name}.json".replace("\\", "/"):
+            set_active_config_relative_path("config.json")
+            path = get_active_config_path()
+            current_app.config["CONFIG_PATH"] = os.path.abspath(path)
+            current_app.config["CONFIG"] = load_config(path)
+        return jsonify({"success": True, "message": f"Deleted profile {name}"})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

@@ -6,30 +6,39 @@ Main application file using the application factory pattern.
 from flask import Flask
 from flask_cors import CORS
 
-from utils.config_utils import load_config
+import os
+
+from utils.config_utils import load_config, get_active_config_path, get_project_root
 from services.db_schema_service import verify_db_schema
 
 
-def create_app(config_path='config.json'):
+def create_app(config_path=None):
     """
     Application factory function.
     
     Creates and configures the Flask application instance.
     
     Args:
-        config_path (str): Path to the configuration JSON file. Defaults to 'config.json'.
+        config_path (str | None): Path to the configuration JSON file. If None, uses the
+            active config (see active_config.txt or config.json).
         
     Returns:
         Flask: Configured Flask application instance.
     """
-    # Load configuration
-    config = load_config(config_path)
+    if config_path is None:
+        resolved = get_active_config_path()
+    elif os.path.isabs(config_path):
+        resolved = os.path.normpath(config_path)
+    else:
+        resolved = os.path.normpath(os.path.join(get_project_root(), config_path))
+    config = load_config(resolved)
     
     # Create Flask app
     app = Flask(__name__)
     
     # Store config in app.config for access via current_app
     app.config['CONFIG'] = config
+    app.config['CONFIG_PATH'] = os.path.abspath(resolved)
     app.config['TEMPLATES_AUTO_RELOAD'] = True
     
     # Initialize CORS

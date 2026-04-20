@@ -537,8 +537,10 @@ def main(config_file):
 
 
 if __name__ == "__main__":
-    config_file = 'config.json'  # default config file
     if len(sys.argv) == 2:
         config_file = sys.argv[1]
-        
+    else:
+        from utils.config_utils import get_active_config_path
+        config_file = get_active_config_path()
+
     main(config_file)
