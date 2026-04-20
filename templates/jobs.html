@@ -813,6 +813,107 @@
                 0% { transform: rotate(0deg); }
                 100% { transform: rotate(360deg); }
             }
+            .recent-searches-wrapper {
+                position: relative;
+            }
+            .recent-searches-dropdown {
+                position: absolute;
+                top: 100%;
+                right: 0;
+                margin-top: 5px;
+                background-color: var(--bg-primary);
+                border: 2px solid var(--accent-color);
+                border-radius: 5px;
+                box-shadow: 0 4px 8px var(--shadow);
+                z-index: 1000;
+                min-width: 350px;
+                max-width: 500px;
+                max-height: 400px;
+                overflow-y: auto;
+            }
+            .search-history-item {
+                background-color: var(--bg-secondary);
+                padding: 12px;
+                margin-bottom: 8px;
+                border-radius: 5px;
+                border: 1px solid var(--border-color);
+                cursor: pointer;
+                transition: all 0.2s;
+                position: relative;
+            }
+            .search-history-item:hover {
+                border-color: var(--accent-color);
+                box-shadow: 0 2px 5px var(--shadow);
+                background-color: var(--bg-tertiary);
+            }
+            .search-history-item-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 6px;
+            }
+            .search-history-item-name {
+                font-weight: bold;
+                color: var(--accent-color);
+                font-size: 14px;
+            }
+            .search-history-item-date {
+                font-size: 0.75em;
+                color: var(--text-tertiary);
+            }
+            .search-history-item-details {
+                font-size: 0.85em;
+                color: var(--text-secondary);
+                margin-top: 4px;
+                line-height: 1.4;
+            }
+            .search-history-item-actions {
+                display: flex;
+                gap: 5px;
+                margin-top: 8px;
+            }
+            .search-history-item-actions button {
+                padding: 4px 8px;
+                font-size: 0.8em;
+                border: none;
+                border-radius: 3px;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .search-history-item .delete-btn {
+                position: absolute;
+                top: 8px;
+                right: 8px;
+                background: none;
+                border: none;
+                color: var(--text-tertiary);
+                cursor: pointer;
+                font-size: 16px;
+                padding: 0;
+                width: 20px;
+                height: 20px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 50%;
+                transition: all 0.2s;
+            }
+            .search-history-item .delete-btn:hover {
+                background-color: var(--error-bg);
+                color: var(--error-text);
+            }
+            .search-history-load-btn {
+                background-color: var(--accent-color);
+                color: white;
+                padding: 6px 12px;
+                font-size: 12px;
+                border: none;
+                border-radius: 3px;
+                cursor: pointer;
+            }
+            .search-history-load-btn:hover {
+                background-color: var(--accent-hover);
+            }
         </style>
     </head>
     <body>
@@ -823,9 +924,29 @@
                 <!-- Display the list of jobs -->
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h2 style="margin: 0;">Jobs List</h2>
-                    <button id="export-csv-btn" onclick="exportJobsToCSV()" style="padding: 8px 16px; background-color: var(--accent-color); color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: bold; transition: background-color 0.3s; white-space: nowrap;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">
-                        Export to CSV
-                    </button>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <div class="recent-searches-wrapper" style="position: relative;">
+                            <button id="recent-searches-btn" onclick="toggleRecentSearches()" style="padding: 8px 16px; background-color: var(--bg-secondary); color: var(--text-primary); border: 2px solid var(--accent-color); border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: bold; transition: all 0.3s; white-space: nowrap;" onmouseover="this.style.backgroundColor='var(--accent-color)'; this.style.color='white';" onmouseout="this.style.backgroundColor='var(--bg-secondary)'; this.style.color='var(--text-primary)';">
+                                🔍 Recent Searches
+                            </button>
+                            <div id="recent-searches-dropdown" class="recent-searches-dropdown" style="display: none; position: absolute; top: 100%; right: 0; margin-top: 5px; background-color: var(--bg-primary); border: 2px solid var(--accent-color); border-radius: 5px; box-shadow: 0 4px 8px var(--shadow); z-index: 1000; min-width: 350px; max-width: 500px; max-height: 400px; overflow-y: auto;">
+                                <div style="padding: 15px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background-color: var(--bg-secondary); position: sticky; top: 0; z-index: 10;">
+                                    <h3 style="margin: 0; color: var(--accent-color); font-size: 16px;">Recent Searches</h3>
+                                    <div style="display: flex; gap: 5px;">
+                                        <button onclick="loadRecentSearches()" style="padding: 5px 10px; background-color: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 3px; cursor: pointer; font-size: 12px;" title="Refresh">🔄</button>
+                                        <button onclick="clearAllSearchHistory()" style="padding: 5px 10px; background-color: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 3px; cursor: pointer; font-size: 12px;" title="Clear All">🗑️</button>
+                                        <button onclick="toggleRecentSearches()" style="padding: 5px 10px; background-color: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 3px; cursor: pointer; font-size: 12px;" title="Close">×</button>
+                                    </div>
+                                </div>
+                                <div id="recent-searches-list" style="padding: 10px;">
+                                    <p style="color: var(--text-tertiary); text-align: center; padding: 20px; margin: 0;">Loading recent searches...</p>
+                                </div>
+                            </div>
+                        </div>
+                        <button id="export-csv-btn" onclick="exportJobsToCSV()" style="padding: 8px 16px; background-color: var(--accent-color); color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: bold; transition: background-color 0.3s; white-space: nowrap;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">
+                            Export to CSV
+                        </button>
+                    </div>
                 </div>
                 
                 <!-- Keyboard Shortcuts Help Modal -->

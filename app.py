@@ -43,6 +43,7 @@ def create_app(config_path='config.json'):
     from routes.config_routes import config_bp
     from routes.search_routes import search_bp
     from routes.ollama_routes import ollama_bp
+    from routes.skills_insights_routes import skills_insights_bp
     
     app.register_blueprint(job_bp)
     app.register_blueprint(cover_letter_bp)
@@ -51,6 +52,7 @@ def create_app(config_path='config.json'):
     app.register_blueprint(config_bp)
     app.register_blueprint(search_bp)
     app.register_blueprint(ollama_bp)
+    app.register_blueprint(skills_insights_bp)
     
     return app
 

@@ -3737,3 +3737,153 @@ function showExportMessage(message, type) {
         }
     }, 3000);
 }
+
+// Recent Searches Functions
+function toggleRecentSearches() {
+    const dropdown = document.getElementById('recent-searches-dropdown');
+    if (dropdown) {
+        const isVisible = dropdown.style.display !== 'none';
+        dropdown.style.display = isVisible ? 'none' : 'block';
+        
+        if (!isVisible) {
+            loadRecentSearches();
+        }
+    }
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(event) {
+    const dropdown = document.getElementById('recent-searches-dropdown');
+    const button = document.getElementById('recent-searches-btn');
+    if (dropdown && button && !dropdown.contains(event.target) && !button.contains(event.target)) {
+        dropdown.style.display = 'none';
+    }
+});
+
+function loadRecentSearches() {
+    const listContainer = document.getElementById('recent-searches-list');
+    if (!listContainer) return;
+    
+    listContainer.innerHTML = '<p style="color: var(--text-tertiary); text-align: center; padding: 20px; margin: 0;">Loading recent searches...</p>';
+    
+    fetch('/api/search-history?limit=10')
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                listContainer.innerHTML = `<p style="color: var(--error-text); text-align: center; padding: 20px; margin: 0;">Error: ${data.error}</p>`;
+                return;
+            }
+            
+            if (data.length === 0) {
+                listContainer.innerHTML = '<p style="color: var(--text-tertiary); text-align: center; padding: 20px; margin: 0;">No recent searches found. Your searches will appear here after you execute them.</p>';
+                return;
+            }
+            
+            listContainer.innerHTML = '';
+            
+            data.forEach(search => {
+                const item = document.createElement('div');
+                item.className = 'search-history-item';
+                
+                // Format date
+                const date = new Date(search.created_at);
+                const dateStr = date.toLocaleString();
+                
+                // Create summary
+                const queriesCount = search.search_queries ? search.search_queries.length : 0;
+                const queriesSummary = search.search_queries && search.search_queries.length > 0
+                    ? search.search_queries.slice(0, 2).map(q => `${q.keywords || ''} in ${q.location || ''}`).join(', ')
+                    : 'No queries';
+                
+                item.innerHTML = `
+                    <button class="delete-btn" onclick="event.stopPropagation(); deleteSearchHistory(${search.id})" title="Delete this search">×</button>
+                    <div class="search-history-item-header">
+                        <span class="search-history-item-name">${search.search_name || 'Unnamed Search'}</span>
+                        <span class="search-history-item-date">${dateStr}</span>
+                    </div>
+                    <div class="search-history-item-details">
+                        <strong>${queriesCount}</strong> query/queries: ${queriesSummary}${queriesCount > 2 ? '...' : ''}<br>
+                        Pages: ${search.pages_to_scrape || 10} | Rounds: ${search.rounds || 1} | Days: ${search.days_to_scrape || 10}
+                    </div>
+                    <div class="search-history-item-actions">
+                        <button class="search-history-load-btn" onclick="loadSearchFromHistory(${search.id})">Load & Execute</button>
+                    </div>
+                `;
+                
+                // Make entire item clickable
+                item.addEventListener('click', function(e) {
+                    if (!e.target.closest('.delete-btn') && !e.target.closest('button')) {
+                        loadSearchFromHistory(search.id);
+                    }
+                });
+                
+                listContainer.appendChild(item);
+            });
+        })
+        .catch(error => {
+            console.error('Error loading recent searches:', error);
+            listContainer.innerHTML = `<p style="color: var(--error-text); text-align: center; padding: 20px; margin: 0;">Error loading recent searches: ${error.message}</p>`;
+        });
+}
+
+function loadSearchFromHistory(historyId) {
+    fetch(`/api/search-history/${historyId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                showExportMessage('Error loading search: ' + data.error, 'error');
+                return;
+            }
+            
+            // Store search config in sessionStorage and navigate to search config page
+            sessionStorage.setItem('loadSearchHistory', JSON.stringify(data));
+            window.location.href = '/search_config';
+        })
+        .catch(error => {
+            showExportMessage('Error loading search: ' + error.message, 'error');
+        });
+}
+
+function deleteSearchHistory(historyId) {
+    if (!confirm('Are you sure you want to delete this search from history?')) {
+        return;
+    }
+    
+    fetch(`/api/search-history/${historyId}`, {
+        method: 'DELETE'
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                showExportMessage('Error deleting search: ' + data.error, 'error');
+            } else {
+                showExportMessage('Search deleted from history', 'success');
+                loadRecentSearches();
+            }
+        })
+        .catch(error => {
+            showExportMessage('Error deleting search: ' + error.message, 'error');
+        });
+}
+
+function clearAllSearchHistory() {
+    if (!confirm('Are you sure you want to clear all search history? This cannot be undone.')) {
+        return;
+    }
+    
+    fetch('/api/search-history/clear', {
+        method: 'POST'
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                showExportMessage('Error clearing history: ' + data.error, 'error');
+            } else {
+                showExportMessage(data.message, 'success');
+                loadRecentSearches();
+            }
+        })
+        .catch(error => {
+            showExportMessage('Error clearing history: ' + error.message, 'error');
+        });
+}

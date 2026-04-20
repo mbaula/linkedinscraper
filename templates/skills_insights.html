@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Skills insights</title>
+    <link rel="stylesheet" href="/static/dark_mode.css">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; color: var(--text-primary); padding-bottom: 48px; }
+        h1 { color: var(--accent-color); }
+        h2 { color: var(--accent-color); margin: 0 0 10px 0; font-size: 1.15rem; }
+        .meta { background: var(--bg-secondary); padding: 12px 16px; border-radius: 8px; margin: 16px 0; font-size: 14px; }
+        .controls { margin: 16px 0; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+        .controls label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; margin-top: 8px; background: var(--bg-secondary); border-radius: 8px; overflow: hidden; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--bg-tertiary); }
+        th { background: var(--bg-tertiary); color: var(--accent-color); }
+        tr:last-child td { border-bottom: none; }
+        .err { color: #f66; margin-top: 12px; }
+        .muted { color: var(--text-secondary, #888); font-size: 13px; }
+
+        .toolbar {
+            position: sticky;
+            top: 62px;
+            z-index: 40;
+            background: var(--bg-primary);
+            border: 1px solid var(--shadow);
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin: 16px 0 20px 0;
+            box-shadow: 0 4px 12px var(--shadow);
+        }
+        .toolbar-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 14px;
+            align-items: center;
+        }
+        .toolbar-row + .toolbar-row { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--bg-tertiary); }
+        .toolbar input[type="search"],
+        .toolbar select {
+            padding: 8px 10px;
+            border-radius: 6px;
+            border: 1px solid var(--bg-tertiary);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            min-width: 200px;
+            font-size: 14px;
+        }
+        .toolbar .btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .toolbar button.small {
+            padding: 6px 12px;
+            cursor: pointer;
+            border-radius: 6px;
+            border: 1px solid var(--accent-color);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 13px;
+        }
+        .toolbar button.small:hover { background: var(--bg-tertiary); }
+        .toolbar .jump a {
+            color: var(--accent-color);
+            text-decoration: none;
+            font-size: 13px;
+            margin-right: 12px;
+        }
+        .toolbar .jump a:hover { text-decoration: underline; }
+        .filter-hint { font-size: 12px; color: var(--text-secondary, #888); margin-top: 6px; }
+
+        details.panel {
+            background: var(--bg-secondary);
+            border-radius: 10px;
+            margin-bottom: 10px;
+            border: 1px solid var(--bg-tertiary);
+            overflow: hidden;
+        }
+        details.panel > summary {
+            cursor: pointer;
+            padding: 12px 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            list-style: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            user-select: none;
+        }
+        details.panel > summary::-webkit-details-marker { display: none; }
+        details.panel > summary::after {
+            content: '▶';
+            font-size: 12px;
+            color: var(--accent-color);
+            transition: transform 0.15s ease;
+        }
+        details.panel[open] > summary::after { transform: rotate(90deg); }
+        details.panel > summary:hover { background: var(--bg-tertiary); }
+        details.panel .panel-body { padding: 0 14px 14px 14px; }
+
+        #section-overall, #section-buckets, #section-titles { scroll-margin-top: 140px; }
+        .section-block { margin-top: 24px; }
+        .hidden-count { font-size: 12px; font-weight: normal; color: var(--text-secondary, #888); }
+    </style>
+</head>
+<body>
+    {% include 'navbar.html' %}
+
+    <h1>Skills insights</h1>
+    <p class="muted">Counts come from your SQLite jobs table. When a posting matches <code>job_cache</code> by description hash, structured <code>skills</code> from extraction are used; otherwise common technologies are detected in the job description text.</p>
+
+    <div class="controls">
+        <label><input type="checkbox" id="includeHidden"> Include hidden jobs</label>
+        <button type="button" id="refreshBtn" class="dark-mode-toggle" style="padding: 8px 16px; cursor: pointer;">Refresh</button>
+    </div>
+    <div id="error" class="err" style="display:none;"></div>
+    <div id="content" style="display:none;">
+        <div class="meta" id="metaBox"></div>
+
+        <div class="toolbar" id="filterToolbar" style="display:none;">
+            <div class="toolbar-row">
+                <label for="searchInput" style="display:flex; align-items:center; gap:8px; flex:1; min-width:220px;">
+                    <span>Search</span>
+                    <input type="search" id="searchInput" placeholder="Skill, bucket, or job title…" autocomplete="off" style="flex:1;">
+                </label>
+                <label for="bucketFilter" style="display:flex; align-items:center; gap:8px;">
+                    <span>Role bucket</span>
+                    <select id="bucketFilter"><option value="">All</option></select>
+                </label>
+            </div>
+            <div class="toolbar-row">
+                <span class="jump">
+                    <a href="#section-overall">Overall</a>
+                    <a href="#section-buckets">Buckets</a>
+                    <a href="#section-titles">Titles</a>
+                </span>
+                <div class="btn-row">
+                    <button type="button" class="small" id="expandBuckets">Expand all buckets</button>
+                    <button type="button" class="small" id="collapseBuckets">Collapse all buckets</button>
+                    <button type="button" class="small" id="expandTitles">Expand all titles</button>
+                    <button type="button" class="small" id="collapseTitles">Collapse all titles</button>
+                </div>
+            </div>
+            <p class="filter-hint">Search applies to the overall table, bucket names, job titles, and skill names. The role bucket dropdown only narrows the <strong>By role bucket</strong> list.</p>
+            <p class="filter-hint" id="filterSummary"></p>
+        </div>
+
+        <div id="section-overall" class="section-block">
+            <details class="panel" id="overallPanel" open>
+                <summary>Overall top skills <span class="hidden-count" id="overallCountHint"></span></summary>
+                <div class="panel-body">
+                    <table>
+                        <thead><tr><th>#</th><th>Skill</th><th>Job postings</th></tr></thead>
+                        <tbody id="overallBody"></tbody>
+                    </table>
+                </div>
+            </details>
+        </div>
+
+        <div id="section-buckets" class="section-block">
+            <h2>By role bucket</h2>
+            <p class="muted">Collapsed by default. Use search or the role bucket filter to narrow.</p>
+            <div id="bucketSections"></div>
+        </div>
+
+        <div id="section-titles" class="section-block">
+            <h2>By job title</h2>
+            <p class="muted">Exact titles from your database (at least two postings with skill matches). Collapsed by default.</p>
+            <div id="titleSections"></div>
+        </div>
+    </div>
+    <p id="loading">Loading…</p>
+
+    <script>
+        let lastData = null;
+
+        async function loadData() {
+            const loading = document.getElementById('loading');
+            const err = document.getElementById('error');
+            const content = document.getElementById('content');
+            err.style.display = 'none';
+            loading.style.display = 'block';
+            content.style.display = 'none';
+            document.getElementById('filterToolbar').style.display = 'none';
+            const q = new URLSearchParams();
+            if (document.getElementById('includeHidden').checked) q.set('include_hidden', 'true');
+            try {
+                const res = await fetch('/api/skills_insights?' + q.toString());
+                if (!res.ok) throw new Error(await res.text() || res.statusText);
+                const data = await res.json();
+                lastData = data;
+                render(data);
+                loading.style.display = 'none';
+                content.style.display = 'block';
+                document.getElementById('filterToolbar').style.display = 'block';
+                fillBucketFilter(data);
+                applyFilters();
+            } catch (e) {
+                loading.style.display = 'none';
+                err.textContent = 'Failed to load: ' + e.message;
+                err.style.display = 'block';
+            }
+        }
+
+        function fillBucketFilter(data) {
+            const sel = document.getElementById('bucketFilter');
+            const cur = sel.value;
+            sel.innerHTML = '<option value="">All</option>';
+            (data.by_role_bucket || []).forEach(b => {
+                if (!b.top_skills || !b.top_skills.length) return;
+                const opt = document.createElement('option');
+                opt.value = b.bucket;
+                opt.textContent = b.bucket;
+                sel.appendChild(opt);
+            });
+            if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+        }
+
+        function render(data) {
+            const m = data.meta || {};
+            document.getElementById('metaBox').innerHTML =
+                '<strong>Jobs scanned:</strong> ' + (m.jobs_scanned ?? '—') +
+                ' &nbsp;|&nbsp; <strong>With description:</strong> ' + (m.jobs_with_description ?? '—') +
+                ' &nbsp;|&nbsp; <strong>With at least one skill tag:</strong> ' + (m.jobs_with_at_least_one_skill_tag ?? '—') +
+                '<br><strong>Structured (job_cache):</strong> ' + (m.jobs_structured_skills ?? '—') +
+                ' &nbsp;|&nbsp; <strong>Keyword-only:</strong> ' + (m.jobs_keyword_skills_only ?? '—') +
+                ' &nbsp;|&nbsp; <strong>Distinct cached descriptions:</strong> ' + (m.distinct_descriptions_in_job_cache ?? '—');
+
+            const ob = document.getElementById('overallBody');
+            ob.innerHTML = '';
+            (data.overall_top_skills || []).forEach((row, i) => {
+                const tr = document.createElement('tr');
+                tr.dataset.skill = (row.skill || '').toLowerCase();
+                tr.innerHTML = '<td>' + (i + 1) + '</td><td>' + escapeHtml(row.skill) + '</td><td>' + row.job_count + '</td>';
+                ob.appendChild(tr);
+            });
+
+            const bs = document.getElementById('bucketSections');
+            bs.innerHTML = '';
+            (data.by_role_bucket || []).forEach(b => {
+                if (!b.top_skills || b.top_skills.length === 0) return;
+                const topName = (b.top_skills[0] && b.top_skills[0].skill) ? b.top_skills[0].skill : '—';
+                const det = document.createElement('details');
+                det.className = 'panel bucket-panel';
+                det.dataset.bucket = b.bucket;
+                const skillsText = b.top_skills.map(r => r.skill).join(' ').toLowerCase();
+                det.dataset.filterText = (b.bucket + ' ' + skillsText).toLowerCase();
+
+                const sum = document.createElement('summary');
+                sum.textContent = b.bucket + ' — ' + b.job_count + ' postings — e.g. ' + topName;
+                det.appendChild(sum);
+
+                const body = document.createElement('div');
+                body.className = 'panel-body';
+                const tbl = document.createElement('table');
+                tbl.innerHTML = '<thead><tr><th>#</th><th>Skill</th><th>Count in bucket</th></tr></thead><tbody></tbody>';
+                const tb = tbl.querySelector('tbody');
+                b.top_skills.forEach((row, i) => {
+                    const tr = document.createElement('tr');
+                    tr.dataset.skill = (row.skill || '').toLowerCase();
+                    tr.innerHTML = '<td>' + (i + 1) + '</td><td>' + escapeHtml(row.skill) + '</td><td>' + row.job_count + '</td>';
+                    tb.appendChild(tr);
+                });
+                body.appendChild(tbl);
+                det.appendChild(body);
+                bs.appendChild(det);
+            });
+
+            const ts = document.getElementById('titleSections');
+            ts.innerHTML = '';
+            (data.by_job_title || []).forEach(b => {
+                const topName = (b.top_skills && b.top_skills[0] && b.top_skills[0].skill) ? b.top_skills[0].skill : '—';
+                const det = document.createElement('details');
+                det.className = 'panel title-panel';
+                const skillsText = (b.top_skills || []).map(r => r.skill).join(' ').toLowerCase();
+                det.dataset.filterText = (b.title + ' ' + skillsText).toLowerCase();
+
+                const sum = document.createElement('summary');
+                sum.textContent = b.title + ' — ' + b.job_count + ' postings — e.g. ' + topName;
+                det.appendChild(sum);
+
+                const body = document.createElement('div');
+                body.className = 'panel-body';
+                const tbl = document.createElement('table');
+                tbl.innerHTML = '<thead><tr><th>#</th><th>Skill</th><th>Count in title</th></tr></thead><tbody></tbody>';
+                const tb = tbl.querySelector('tbody');
+                (b.top_skills || []).forEach((row, i) => {
+                    const tr = document.createElement('tr');
+                    tr.dataset.skill = (row.skill || '').toLowerCase();
+                    tr.innerHTML = '<td>' + (i + 1) + '</td><td>' + escapeHtml(row.skill) + '</td><td>' + row.job_count + '</td>';
+                    tb.appendChild(tr);
+                });
+                body.appendChild(tbl);
+                det.appendChild(body);
+                ts.appendChild(det);
+            });
+        }
+
+        function applyFilters() {
+            const q = document.getElementById('searchInput').value.trim().toLowerCase();
+            const bucketPick = document.getElementById('bucketFilter').value;
+
+            let overallShown = 0;
+            let overallTotal = 0;
+            document.querySelectorAll('#overallBody tr').forEach(tr => {
+                overallTotal++;
+                const skill = tr.dataset.skill || '';
+                const rowText = tr.textContent.toLowerCase();
+                const ok = (!q || skill.includes(q) || rowText.includes(q));
+                tr.style.display = ok ? '' : 'none';
+                if (ok) overallShown++;
+            });
+            const hint = document.getElementById('overallCountHint');
+            if (q) hint.textContent = '(' + overallShown + ' of ' + overallTotal + ' rows)';
+            else hint.textContent = '(' + overallTotal + ' rows)';
+
+            let bucketsVisible = 0;
+            document.querySelectorAll('.bucket-panel').forEach(el => {
+                const text = el.dataset.filterText || '';
+                const matchesQ = !q || text.includes(q);
+                const matchesPick = !bucketPick || el.dataset.bucket === bucketPick;
+                const show = matchesQ && matchesPick;
+                el.style.display = show ? '' : 'none';
+                if (show) bucketsVisible++;
+
+                el.querySelectorAll('tbody tr').forEach(tr => {
+                    const skill = tr.dataset.skill || '';
+                    const rowText = tr.textContent.toLowerCase();
+                    const rowOk = !q || skill.includes(q) || rowText.includes(q);
+                    tr.style.display = rowOk ? '' : 'none';
+                });
+            });
+
+            let titlesVisible = 0;
+            document.querySelectorAll('.title-panel').forEach(el => {
+                const text = el.dataset.filterText || '';
+                const matchesQ = !q || text.includes(q);
+                el.style.display = matchesQ ? '' : 'none';
+                if (matchesQ) titlesVisible++;
+
+                el.querySelectorAll('tbody tr').forEach(tr => {
+                    const skill = tr.dataset.skill || '';
+                    const rowText = tr.textContent.toLowerCase();
+                    const rowOk = !q || skill.includes(q) || rowText.includes(q);
+                    tr.style.display = rowOk ? '' : 'none';
+                });
+            });
+
+            const fs = document.getElementById('filterSummary');
+            let parts = [];
+            if (q) parts.push('Search: “' + escapeHtml(document.getElementById('searchInput').value.trim()) + '”');
+            if (bucketPick) parts.push('Bucket filter: ' + escapeHtml(bucketPick));
+            parts.push('Showing ' + bucketsVisible + ' bucket panels, ' + titlesVisible + ' title panels');
+            fs.innerHTML = parts.join(' · ');
+        }
+
+        function setAllOpen(selector, open) {
+            document.querySelectorAll(selector).forEach(el => { el.open = open; });
+        }
+
+        function escapeHtml(s) {
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        document.getElementById('refreshBtn').addEventListener('click', loadData);
+        document.getElementById('includeHidden').addEventListener('change', loadData);
+        document.getElementById('searchInput').addEventListener('input', applyFilters);
+        document.getElementById('bucketFilter').addEventListener('change', applyFilters);
+        document.getElementById('expandBuckets').addEventListener('click', () => setAllOpen('.bucket-panel', true));
+        document.getElementById('collapseBuckets').addEventListener('click', () => setAllOpen('.bucket-panel', false));
+        document.getElementById('expandTitles').addEventListener('click', () => setAllOpen('.title-panel', true));
+        document.getElementById('collapseTitles').addEventListener('click', () => setAllOpen('.title-panel', false));
+
+        loadData();
+    </script>
+</body>
+</html>

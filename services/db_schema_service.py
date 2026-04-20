@@ -176,6 +176,27 @@ def verify_db_schema(config_dict):
         """)
         conn.commit()
         print("Verified project_ideas table exists")
+        
+        # Create search_history table if it doesn't exist
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS search_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                search_name TEXT,
+                search_queries TEXT NOT NULL,
+                desc_words TEXT,
+                title_exclude TEXT,
+                title_include TEXT,
+                company_exclude TEXT,
+                languages TEXT,
+                pages_to_scrape INTEGER,
+                rounds INTEGER,
+                days_to_scrape INTEGER,
+                timespan TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+        print("Verified search_history table exists")
     finally:
         close_db_connection(conn)
 

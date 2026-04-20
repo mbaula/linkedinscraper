@@ -1,13 +1,14 @@
 """
 Search/scraping execution routes blueprint.
 """
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, current_app
 import subprocess
 import sys
 import os
 import threading
 from datetime import datetime
 import routes.shared_state as shared_state
+from services.search_history_service import save_search_history
 
 # Create blueprint
 search_bp = Blueprint('search', __name__)
