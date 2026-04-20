@@ -4,6 +4,22 @@ from urllib.parse import quote
 from typing import List, Dict
 
 
+def build_linkedin_f_tpr(config: dict) -> str:
+    """
+    LinkedIn guest search uses f_TPR=r{seconds} for "posted within the last N seconds".
+    If config['timespan'] is set, it wins (advanced override). Otherwise derive from days_to_scrape.
+    """
+    explicit = (config.get("timespan") or "").strip()
+    if explicit:
+        return explicit
+    try:
+        days = int(config.get("days_to_scrape", 10))
+    except (TypeError, ValueError):
+        days = 10
+    days = max(1, min(days, 365))
+    return f"r{days * 86400}"
+
+
 class LinkedInScraper(BaseScraper):
     """
     LinkedIn job board scraper.
@@ -25,8 +41,8 @@ class LinkedInScraper(BaseScraper):
         rounds = self.config.get('rounds', 1)
         pages_to_scrape = self.config.get('pages_to_scrape', 10)
         search_queries = self.config.get('search_queries', [])
-        timespan = self.config.get('timespan', 'r84600')
-        
+        f_tpr = build_linkedin_f_tpr(self.config)
+
         total_rounds = rounds
         total_queries = len(search_queries)
         total_pages = total_rounds * total_queries * pages_to_scrape
@@ -37,6 +53,7 @@ class LinkedInScraper(BaseScraper):
         print(f"    - Search queries: {total_queries}", flush=True)
         print(f"    - Pages per query: {pages_to_scrape}", flush=True)
         print(f"    - Total pages to scrape: {total_pages}", flush=True)
+        print(f"    - LinkedIn date filter f_TPR={f_tpr} (set 'timespan' in config to override)", flush=True)
         
         for round_num in range(0, rounds):
             print(f"\n  Round {round_num + 1}/{rounds}:", flush=True)
@@ -54,9 +71,11 @@ class LinkedInScraper(BaseScraper):
                 
                 for page_num in range(0, pages_to_scrape):
                     current_page += 1
-                    url = (f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?"
-                          f"keywords={keywords_encoded}&location={location_encoded}&f_TPR=&f_WT={f_wt}&geoId=&"
-                          f"f_TPR={timespan}&start={25*page_num}")
+                    url = (
+                        f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?"
+                        f"keywords={keywords_encoded}&location={location_encoded}&f_WT={f_wt}&geoId="
+                        f"&f_TPR={f_tpr}&start={25 * page_num}"
+                    )
                     
                     print(f"      -> Scraping page {page_num + 1}/{pages_to_scrape} (Overall: {current_page}/{total_pages})...", flush=True)
                     soup = self.get_with_retry(url)

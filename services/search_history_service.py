@@ -25,8 +25,8 @@ def save_search_history(config_dict, search_name=None):
             INSERT INTO search_history (
                 search_name, search_queries, desc_words, title_exclude,
                 title_include, company_exclude, languages, pages_to_scrape,
-                rounds, days_to_scrape, timespan
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                rounds, days_to_scrape, timespan, listing_must_include_one_of
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             search_name,
             json.dumps(config_dict.get('search_queries', [])),
@@ -38,7 +38,8 @@ def save_search_history(config_dict, search_name=None):
             config_dict.get('pages_to_scrape', 10),
             config_dict.get('rounds', 1),
             config_dict.get('days_to_scrape', 10),
-            config_dict.get('timespan', '')
+            config_dict.get('timespan', ''),
+            json.dumps(config_dict.get('listing_must_include_one_of', [])),
         ))
         conn.commit()
         return cursor.lastrowid
@@ -64,7 +65,7 @@ def get_search_history(config_dict, limit=20):
         cursor.execute("""
             SELECT id, search_name, search_queries, desc_words, title_exclude,
                    title_include, company_exclude, languages, pages_to_scrape,
-                   rounds, days_to_scrape, timespan, created_at
+                   rounds, days_to_scrape, timespan, listing_must_include_one_of, created_at
             FROM search_history
             ORDER BY created_at DESC
             LIMIT ?
@@ -87,7 +88,8 @@ def get_search_history(config_dict, limit=20):
                 'rounds': row[9],
                 'days_to_scrape': row[10],
                 'timespan': row[11],
-                'created_at': row[12]
+                'listing_must_include_one_of': json.loads(row[12]) if row[12] else [],
+                'created_at': row[13]
             })
         
         return history
@@ -113,7 +115,7 @@ def get_search_history_by_id(history_id, config_dict):
         cursor.execute("""
             SELECT id, search_name, search_queries, desc_words, title_exclude,
                    title_include, company_exclude, languages, pages_to_scrape,
-                   rounds, days_to_scrape, timespan, created_at
+                   rounds, days_to_scrape, timespan, listing_must_include_one_of, created_at
             FROM search_history
             WHERE id = ?
         """, (history_id,))
@@ -133,7 +135,8 @@ def get_search_history_by_id(history_id, config_dict):
                 'rounds': row[9],
                 'days_to_scrape': row[10],
                 'timespan': row[11],
-                'created_at': row[12]
+                'listing_must_include_one_of': json.loads(row[12]) if row[12] else [],
+                'created_at': row[13]
             }
         return None
     finally:

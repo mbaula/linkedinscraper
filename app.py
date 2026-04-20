@@ -62,7 +62,8 @@ def create_app(config_path=None):
     app.register_blueprint(search_bp)
     app.register_blueprint(ollama_bp)
     app.register_blueprint(skills_insights_bp)
-    
+
+    verify_db_schema(config)
     return app
 
 
@@ -70,6 +71,4 @@ def create_app(config_path=None):
 app = create_app()
 
 if __name__ == "__main__":
-    # Verify database schema on startup
-    verify_db_schema(app.config['CONFIG'])
     app.run(debug=True, port=5000)

@@ -231,7 +231,10 @@ def save_search_history_route():
             'pages_to_scrape': data.get('pages_to_scrape', config.get('pages_to_scrape', 10)),
             'rounds': data.get('rounds', config.get('rounds', 1)),
             'days_to_scrape': data.get('days_to_scrape', config.get('days_to_scrape', 10)),
-            'timespan': data.get('timespan', config.get('timespan', ''))
+            'timespan': data.get('timespan', config.get('timespan', '')),
+            'listing_must_include_one_of': data.get(
+                'listing_must_include_one_of', config.get('listing_must_include_one_of', [])
+            ),
         }
         
         history_id = save_search_history(config, search_name=search_name)

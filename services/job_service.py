@@ -197,6 +197,18 @@ def filter_jobs_by_config(jobs_list, config):
                     for desc_word in desc_words
                 )
             ]
+
+    must_terms = config.get('listing_must_include_one_of') or []
+    if must_terms and len(must_terms) > 0:
+        must_terms = [word.strip().lower() for word in must_terms if word and str(word).strip()]
+        if must_terms:
+            def _listing_text(job):
+                return ((job.get('title') or '') + ' ' + (job.get('job_description') or '')).lower()
+
+            filtered_jobs = [
+                job for job in filtered_jobs
+                if any(term in _listing_text(job) for term in must_terms)
+            ]
     
     # Filter by company_exclude (case insensitive)
     company_exclude = config.get('company_exclude', [])

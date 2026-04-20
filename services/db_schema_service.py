@@ -192,11 +192,21 @@ def verify_db_schema(config_dict):
                 rounds INTEGER,
                 days_to_scrape INTEGER,
                 timespan TEXT,
+                listing_must_include_one_of TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
         conn.commit()
         print("Verified search_history table exists")
+
+        cursor.execute("PRAGMA table_info(search_history)")
+        sh_columns = [column[1] for column in cursor.fetchall()]
+        if "listing_must_include_one_of" not in sh_columns:
+            cursor.execute(
+                "ALTER TABLE search_history ADD COLUMN listing_must_include_one_of TEXT"
+            )
+            conn.commit()
+            print("Added listing_must_include_one_of column to search_history")
     finally:
         close_db_connection(conn)
 

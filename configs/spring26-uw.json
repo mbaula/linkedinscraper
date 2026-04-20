@@ -26,6 +26,16 @@
     "languages": [
         "en"
     ],
+    "listing_must_include_one_of": [
+        "coop",
+        "co-op",
+        "intern",
+        "internship",
+        "co op",
+        "internship/co-op",
+        "internship/co op",
+        "internship/coop"
+    ],
     "ollama_base_url": "http://localhost:11434",
     "ollama_extraction_model": "gpt-oss:latest",
     "ollama_model": "gpt-oss:latest",
@@ -85,13 +95,8 @@
             "f_WT": ""
         }
     ],
-    "timespan": "r84600",
+    "timespan": "",
     "title_exclude": [
-        "intern",
-        "internship",
-        "co-op",
-        "coop",
-        "co op",
         "senior",
         "staff",
         "principal",
@@ -139,6 +144,10 @@
         "Software Engineer I",
         "Software Developer I",
         "Junior Full Stack",
-        "Developer"
+        "Developer",
+        "firmware",
+        "embedded",
+        "robotics",
+        "robot"
     ]
 }

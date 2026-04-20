@@ -45,11 +45,23 @@ def safe_print(text, end='\n', flush=False):
 
 def remove_irrelevant_jobs(joblist, config):
     #Filter out jobs based on description, title, and language. Set up in config.json.
-    new_joblist = [job for job in joblist if not any(word.lower() in job['job_description'].lower() for word in config['desc_words'])]   
-    new_joblist = [job for job in new_joblist if not any(word.lower() in job['title'].lower() for word in config['title_exclude'])] if len(config['title_exclude']) > 0 else new_joblist
-    new_joblist = [job for job in new_joblist if any(word.lower() in job['title'].lower() for word in config['title_include'])] if len(config['title_include']) > 0 else new_joblist
-    new_joblist = [job for job in new_joblist if safe_detect(job['job_description']) in config['languages']] if len(config['languages']) > 0 else new_joblist
-    new_joblist = [job for job in new_joblist if not any(word.lower() in job['company'].lower() for word in config['company_exclude'])] if len(config['company_exclude']) > 0 else new_joblist
+    desc_words = config.get('desc_words') or []
+    new_joblist = [job for job in joblist if not any(word.lower() in job['job_description'].lower() for word in desc_words)]
+    title_exclude = config.get('title_exclude') or []
+    new_joblist = [job for job in new_joblist if not any(word.lower() in job['title'].lower() for word in title_exclude)] if len(title_exclude) > 0 else new_joblist
+    title_include = config.get('title_include') or []
+    new_joblist = [job for job in new_joblist if any(word.lower() in job['title'].lower() for word in title_include)] if len(title_include) > 0 else new_joblist
+    langs = config.get('languages') or []
+    new_joblist = [job for job in new_joblist if safe_detect(job['job_description']) in langs] if len(langs) > 0 else new_joblist
+    company_exclude = config.get('company_exclude') or []
+    new_joblist = [job for job in new_joblist if not any(word.lower() in job['company'].lower() for word in company_exclude)] if len(company_exclude) > 0 else new_joblist
+
+    must_terms = [w.strip().lower() for w in (config.get('listing_must_include_one_of') or []) if w and str(w).strip()]
+    if must_terms:
+        def _listing_blob(job):
+            return ((job.get('title') or '') + ' ' + (job.get('job_description') or '')).lower()
+
+        new_joblist = [job for job in new_joblist if any(t in _listing_blob(job) for t in must_terms)]
 
     return new_joblist
 
@@ -414,7 +426,12 @@ def main(config_file):
                     
                 job_date = datetime.combine(job_date, time())
                 #if job is older than a week, skip it
-                if job_date < datetime.now() - timedelta(days=config['days_to_scrape']):
+                try:
+                    days_window = int(config.get('days_to_scrape', 10))
+                except (TypeError, ValueError):
+                    days_window = 10
+                days_window = max(1, days_window)
+                if job_date < datetime.now() - timedelta(days=days_window):
                     skipped_count += 1
                     continue
                 

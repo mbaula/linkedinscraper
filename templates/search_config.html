@@ -383,6 +383,14 @@
                 </div>
 
                 <div class="form-group">
+                    <label>Listing must include at least one of (one per line)</label>
+                    <textarea id="listing_must_include_one_of" placeholder="e.g. Python&#10;Kubernetes&#10;Leave empty to disable"></textarea>
+                    <small style="color: var(--text-tertiary); display: block; margin-top: 5px;">
+                        If you add any lines here, a job is kept only when <strong>at least one</strong> of these phrases appears in the <strong>title or description</strong> (case-insensitive). Empty means no extra requirement.
+                    </small>
+                </div>
+
+                <div class="form-group">
                     <label>Title Words to Exclude</label>
                     <div class="tag-input">
                         <input type="text" id="title-exclude-input" placeholder="Type and press Enter to add">
@@ -490,11 +498,17 @@
                 <div class="form-group">
                     <label>Days to Scrape (how many days back)</label>
                     <input type="number" id="days_to_scrape" min="1" value="10">
+                    <small style="color: var(--text-tertiary); display: block; margin-top: 5px;">
+                        Controls both the LinkedIn search window (<code>f_TPR=r(days×86400)</code>) and how far back job posting dates are accepted when saving new jobs. Increase if you are missing older listings that are still on LinkedIn.
+                    </small>
                 </div>
 
                 <div class="form-group">
-                    <label>Timespan</label>
-                    <input type="text" id="timespan" placeholder="e.g., r84600">
+                    <label>Timespan (optional override)</label>
+                    <input type="text" id="timespan" placeholder="Leave blank to use Days to Scrape only">
+                    <small style="color: var(--text-tertiary); display: block; margin-top: 5px;">
+                        Advanced: LinkedIn <code>f_TPR</code> value, e.g. <code>r86400</code> (24h), <code>r604800</code> (7d), <code>r2592000</code> (30d). If you fill this, it <strong>overrides</strong> the automatic value from Days to Scrape. Leave empty so Days to Scrape drives the search.
+                    </small>
                 </div>
 
                 <div class="form-group">
@@ -776,10 +790,16 @@
                 .map(line => line.trim())
                 .filter(line => line.length > 0);
 
+            const listingMust = document.getElementById('listing_must_include_one_of').value
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0);
+
             const config = {
                 ...configData,
                 search_queries: searchQueries,
                 desc_words: descWords,
+                listing_must_include_one_of: listingMust,
                 title_exclude: getTagsFromContainer('title-exclude-tags'),
                 title_include: getTagsFromContainer('title-include-tags'),
                 company_exclude: getTagsFromContainer('company-exclude-tags'),
@@ -822,6 +842,7 @@
 
             // Populate text areas
             document.getElementById('desc_words').value = (config.desc_words || []).join('\n');
+            document.getElementById('listing_must_include_one_of').value = (config.listing_must_include_one_of || []).join('\n');
             document.getElementById('languages').value = (config.languages || []).join(', ');
 
             // Populate cover letter settings
@@ -1228,6 +1249,7 @@
             const config = {
                 search_queries: data.search_queries || [],
                 desc_words: data.desc_words || [],
+                listing_must_include_one_of: data.listing_must_include_one_of || [],
                 title_exclude: data.title_exclude || [],
                 title_include: data.title_include || [],
                 company_exclude: data.company_exclude || [],
@@ -1256,6 +1278,7 @@
             
             // Populate text areas
             document.getElementById('desc_words').value = (config.desc_words || []).join('\n');
+            document.getElementById('listing_must_include_one_of').value = (config.listing_must_include_one_of || []).join('\n');
             document.getElementById('languages').value = (config.languages || []).join(', ');
             
             // Populate scraping settings
